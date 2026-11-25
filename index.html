@@ -1,0 +1,1446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Batgasm Casino Tracker</title>
+<meta name="description" content="SireBlade's self-tracking dashboard for !gamble in twitch.tv/batgasm. Stream points only.">
+<meta name="theme-color" content="#16131e">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='6' fill='%239146ff'/%3E%3Ccircle cx='11' cy='11' r='2.6' fill='white'/%3E%3Ccircle cx='21' cy='21' r='2.6' fill='white'/%3E%3Ccircle cx='16' cy='16' r='2.6' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky stream-overlay header; "Live" is a glanceable wall of big numbers that fills itself from chat; deeper tabs below. Dark-first. */
+:root{
+  --bg:#0d0b12; --surface:#16131e; --surface-2:#1f1a2a; --line:#2e2740; --fg:#ece7f5; --muted:#9d95b0;
+  --accent:#9146ff; --accent-2:#b98aff; --accent-soft:rgba(145,70,255,.16); --on-accent:#ffffff;
+  --win:#2bd17e; --loss:#ff5163; --warn:#f4b740; --info:#58aaff;
+  --win-soft:rgba(43,209,126,.14); --loss-soft:rgba(255,81,99,.14); --warn-soft:rgba(244,183,64,.15); --info-soft:rgba(88,170,255,.14);
+  --f-display:'Chakra Petch','Segoe UI',system-ui,sans-serif;
+  --f-body:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --r:10px; --qa-h:0px;
+  color-scheme:dark;
+}
+:root[data-ui="light"]{
+  --bg:#f5f3fa; --surface:#ffffff; --surface-2:#efebf7; --line:#ddd5ec; --fg:#1b1526; --muted:#62597a;
+  --accent:#7b2ff0; --accent-2:#6020cc; --accent-soft:rgba(123,47,240,.10); --on-accent:#ffffff;
+  --win:#11834a; --loss:#cf2639; --warn:#9a6400; --info:#1d6cc0;
+  --win-soft:rgba(17,131,74,.10); --loss-soft:rgba(207,38,57,.09); --warn-soft:rgba(154,100,0,.10); --info-soft:rgba(29,108,192,.10);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5;margin:0;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1320px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:.01em}
+h2{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+h3{font-size:15px;font-weight:600}
+a{color:var(--accent-2)}
+:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+.muted{color:var(--muted)} .pos{color:var(--win)} .neg{color:var(--loss)} .warnc{color:var(--warn)}
+.small{font-size:12px}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-in{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;padding-block:12px}
+.brand{display:flex;flex-direction:column;min-width:0;flex:1 1 220px}
+.brand h1{font-size:19px;font-weight:700;line-height:1.15}
+.brand h1 span{color:var(--accent-2)}
+.brand .sub{font-size:12px;color:var(--muted)}
+.hbal{display:flex;flex-direction:column;align-items:flex-end}
+.hbal .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.hbal .val{font-family:var(--f-mono);font-size:22px;font-weight:600;line-height:1.1;transition:color .3s}
+.hbal .val.flash-w{color:var(--win)} .hbal .val.flash-l{color:var(--loss)}
+.hsess{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap;text-decoration:none;color:var(--fg)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.pill.ok .dot{background:var(--win);box-shadow:0 0 0 3px var(--win-soft)}
+.pill.ok.pulse .dot{animation:pulse 1.8s ease-out infinite}
+.pill.wait .dot{background:var(--warn)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 var(--win-soft)}100%{box-shadow:0 0 0 9px transparent}}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs a{padding:9px 14px;color:var(--muted);text-decoration:none;font-weight:600;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs a[aria-current="page"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tabs a:hover{color:var(--fg)}
+
+/* buttons & inputs */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-weight:600;cursor:pointer;font-size:13px;line-height:1.2;white-space:nowrap;text-decoration:none;color:var(--fg)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--loss);border-color:var(--loss-soft)}
+.btn.danger.armed{background:var(--loss);color:#fff;border-color:var(--loss)}
+.btn.sm{padding:5px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=number],input[type=datetime-local],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;width:100%}
+textarea{font-family:var(--f-mono);font-size:12px;resize:vertical}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;min-width:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.row > *{min-width:0}
+.grow{flex:1 1 140px}
+
+/* page */
+main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px))}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.panel-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}.s7{grid-column:span 7}.s5{grid-column:span 5}.s3{grid-column:span 3}
+@media (max-width:1000px){.s8,.s4,.s6,.s7,.s5{grid-column:span 12}.s3{grid-column:span 6}}
+@media (max-width:560px){.s3{grid-column:span 12}}
+@media (min-width:1001px) and (max-width:1180px){.s4{grid-column:span 6}}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:18px;text-align:center;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:5px 10px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--fg)}
+
+/* banner */
+.banner{background:var(--warn-soft);border-bottom:1px solid var(--line)}
+.banner .wrap{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-block:10px;font-size:13px}
+.banner b{color:var(--warn)}
+
+/* LIVE hero */
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.hero .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+.hero .v{font-family:var(--f-display);font-size:clamp(30px,4.2vw,44px);font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hero .d{font-size:12.5px;color:var(--muted)}
+.hero.accent{background:linear-gradient(160deg,var(--accent-soft),var(--surface) 70%);border-color:var(--accent)}
+.feed{display:flex;flex-direction:column}
+.fi{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.fi:last-child{border-bottom:0}
+.fi.fresh{animation:fresh 2.4s ease-out}
+@keyframes fresh{from{background:var(--accent-soft)}to{background:transparent}}
+.roll{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-weight:700;font-size:15px}
+.roll.w{background:var(--win-soft);color:var(--win)} .roll.l{background:var(--loss-soft);color:var(--loss)} .roll.n{background:var(--surface-2);color:var(--muted)}
+.fi .m{font-size:12px;color:var(--muted)}
+.fi .r{text-align:right;font-family:var(--f-mono)}
+.fi .r b{font-size:15px}
+.strip{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:2px}
+.strip span{aspect-ratio:1;max-width:100%;border-radius:2px;background:var(--surface-2)}
+.rich{display:flex;flex-direction:column}
+.rich div{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:center}
+.rich div:last-child{border-bottom:0}
+.rich .me{color:var(--accent-2);font-weight:700}
+.rich .rk{font-family:var(--f-mono);color:var(--muted);font-size:12px}
+.rich .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* stat tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{background:var(--surface-2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.tile .v{font-family:var(--f-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.tile .d{font-size:12px;color:var(--muted)}
+.tile.big .v{font-size:24px}
+
+/* recommendations */
+.recs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.rec{border-radius:8px;padding:12px 14px;background:var(--surface-2);border-left:4px solid var(--muted);display:flex;flex-direction:column;gap:6px;min-width:0}
+.rec.critical{border-left-color:var(--loss);background:var(--loss-soft)}
+.rec.caution{border-left-color:var(--warn);background:var(--warn-soft)}
+.rec.positive{border-left-color:var(--win);background:var(--win-soft)}
+.rec.info{border-left-color:var(--info);background:var(--info-soft)}
+.rec .t{font-weight:700;display:flex;gap:6px;align-items:baseline}
+.rec .data{font-family:var(--f-mono);font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.rec .act{font-size:13px}
+.rec .act b{font-weight:600}
+
+/* charts */
+.chart{position:relative;width:100%;min-height:180px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.axis text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
+.gridline{stroke:var(--line);stroke-width:1}
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:240px;font-family:var(--f-mono)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+
+/* by game cards */
+.games{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.gcard{background:var(--surface-2);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.gcard .gh{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.gcard .gh b{font-family:var(--f-display);font-size:16px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.badge{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.badge.small-s{background:var(--warn-soft);color:var(--warn)}
+.badge.mod-s{background:var(--info-soft);color:var(--info)}
+.badge.solid-s{background:var(--win-soft);color:var(--win)}
+.badge.tag{background:var(--accent-soft);color:var(--accent-2)}
+.badge.tag.bad{background:var(--loss-soft);color:var(--loss)}
+
+/* bars */
+.brow{display:grid;grid-template-columns:70px 1fr 74px;gap:8px;align-items:center;font-size:12.5px}
+.brow .lab{color:var(--muted);font-weight:600}
+.brow .val{text-align:right;font-family:var(--f-mono)}
+.btrack{position:relative;height:16px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.btrack .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+.btrack .bar{position:absolute;top:2px;bottom:2px;border-radius:3px}
+.heat{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px}
+@media (max-width:640px){.heat{grid-template-columns:repeat(12,minmax(0,1fr))}}
+.heat .c{aspect-ratio:1;max-width:100%;border-radius:4px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:9.5px;font-family:var(--f-mono);color:var(--muted);cursor:default}
+.bucket{display:grid;grid-template-columns:62px 1fr;gap:4px 10px;align-items:center;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line)}
+.bucket:last-child{border-bottom:0}
+.bucket .bl{font-weight:700;font-family:var(--f-mono)}
+.bucket .bs{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted)}
+.bucket .bs b{color:var(--fg);font-family:var(--f-mono);font-weight:600}
+
+/* progress */
+.prog{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
+.prog > div{height:100%;background:var(--accent);border-radius:999px}
+.goal{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}
+.goal:last-of-type{border-bottom:0}
+.goal .gt{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+/* gauge */
+.gauge-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.gauge{width:150px;max-width:100%}
+.gauge text{font-family:var(--f-mono);fill:var(--fg)}
+.parts{flex:1 1 160px;display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.parts div{display:flex;justify-content:space-between;gap:8px}
+
+/* bet log */
+.blist{display:flex;flex-direction:column}
+.bet{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.bet .g{font-weight:600}
+.bet .ts{font-size:11.5px;color:var(--muted)}
+.bet .amt{font-family:var(--f-mono);text-align:right}
+.bet .acts{display:flex;gap:4px}
+.bet .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+@media (max-width:560px){.bet{grid-template-columns:minmax(0,1fr) auto;}.bet .c3{display:none}.bet .acts{grid-column:1/-1;justify-content:flex-end}}
+.editbox{background:var(--surface-2);border-radius:8px;padding:12px;margin:6px 0;display:flex;flex-direction:column;gap:10px}
+.sessrow{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.prow{padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;display:flex;flex-direction:column;gap:2px}
+.prow .line{font-family:var(--f-mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+
+/* strategies */
+.strats{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+@media (max-width:400px){.strats{grid-template-columns:minmax(0,1fr)}}
+.strat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.strat h3{font-size:17px}
+.strat dl{margin:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.strat dt{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
+.strat dd{margin:0}
+.simres{background:var(--surface-2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.statrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px}
+.statrow div{display:flex;flex-direction:column}
+.statrow span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.statrow b{font-family:var(--f-mono);font-size:14px}
+.tbl-wrap{overflow-x:auto}
+table.mini{border-collapse:collapse;font-size:12px;width:100%}
+table.mini th,table.mini td{padding:4px 8px;text-align:right;border-bottom:1px solid var(--line);font-family:var(--f-mono);white-space:nowrap}
+table.mini th{color:var(--muted);font-family:var(--f-body);font-weight:600;font-size:11px}
+table.mini td:first-child,table.mini th:first-child{text-align:left}
+.callout{background:var(--accent-soft);border-radius:8px;padding:12px 14px;font-size:13.5px}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+
+/* settings */
+.set-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.gedit{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;padding:6px 0;border-bottom:1px solid var(--line)}
+@media (max-width:480px){.gedit{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}.gedit .gn{grid-column:1/-1}}
+
+/* quick add (Bet log tab only) */
+.qa{position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--accent);box-shadow:0 -8px 30px rgba(0,0,0,.35);padding-bottom:env(safe-area-inset-bottom,0px)}
+.qa-in{display:flex;flex-direction:column;gap:8px;padding-block:10px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.qa-main{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.qa-fields{display:flex;gap:8px;flex:1 1 300px;min-width:0}
+.qa-fields select{flex:1 1 120px}
+.qa-fields .wg{flex:1 1 140px;position:relative;min-width:0}
+.qa-fields .wg input{font-family:var(--f-mono);font-size:16px;font-weight:600}
+.qa-hint{font-size:11.5px;color:var(--muted);min-height:16px}
+.qa-btns{display:flex;gap:6px;flex:1 1 380px}
+.qa-btns .btn{flex:1 1 0;padding:10px 6px;font-size:13px}
+.btn.loss{background:var(--loss);border-color:var(--loss);color:#fff}
+.btn.win{background:var(--win);border-color:var(--win);color:#06150d}
+.btn.win3{background:transparent;border-color:var(--win);color:var(--win)}
+.kbd{font-family:var(--f-mono);font-size:10px;opacity:.7;border:1px solid currentColor;border-radius:3px;padding:0 3px}
+@media (max-width:560px){.kbd{display:none}}
+.qa-custom{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--qa-h) + 18px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;display:flex;gap:12px;align-items:center;max-width:calc(100vw - 32px)}
+.toast button{background:transparent;border:0;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline}
+:root[data-ui="light"] .toast button{color:#c9a6ff}
+.foot{font-size:12px;color:var(--muted);text-align:center;padding-block:4px 8px}
+.cols2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <div class="brand">
+      <h1>SireBlade <span>·</span> Batgasm Casino Tracker</h1>
+      <div class="sub">!gamble stats from twitch.tv/batgasm</div>
+    </div>
+    <div class="hsess">
+      <a id="cap-pill" class="pill" href="#setup"><span class="dot"></span><span id="cap-text">Auto-capture off</span></a>
+      <span id="sess-pill" class="pill"><span class="dot"></span><span id="sess-text">No session</span></span>
+      <button id="sess-btn" class="btn sm" type="button">Start session</button>
+    </div>
+    <div class="hbal">
+      <span class="lbl" id="bal-lbl">Balance</span>
+      <span class="val" id="hdr-bal">0</span>
+    </div>
+  </div>
+  <nav class="tabs wrap" aria-label="Sections">
+    <a href="#live" data-route="live">Live</a>
+    <a href="#stats" data-route="stats">Stats</a>
+    <a href="#log" data-route="log">Bet log</a>
+    <a href="#strategies" data-route="strategies">Strategies</a>
+    <a href="#setup" data-route="setup">Settings</a>
+  </nav>
+</header>
+<div id="demo-banner" class="banner" hidden>
+  <div class="wrap"><span><b>Demo data.</b> These bets and chat rolls are made up so you can see every panel. Your first real bet clears them automatically.</span><button class="btn sm" type="button" data-act="clear-demo">Clear demo now</button></div>
+</div>
+<main id="view" class="wrap" aria-live="polite"></main>
+<footer class="foot wrap">Stream points only. Take breaks. If real-money gambling ever stops being fun, call 1-800-GAMBLER.</footer>
+
+<section id="qa" class="qa" aria-label="Log a bet by hand" hidden>
+  <div class="qa-in">
+    <div id="qa-custom" class="qa-custom" hidden>
+      <label class="f" style="flex:1 1 110px">Multiplier (× wager returned)<input id="qa-mult" type="text" inputmode="decimal" placeholder="e.g. 2.5"></label>
+      <label class="f" style="flex:1 1 130px">or total payout<input id="qa-payout" type="text" inputmode="numeric" placeholder="0 = loss"></label>
+      <button class="btn primary" type="button" data-act="qa-custom-log">Log it</button>
+      <button class="btn ghost" type="button" data-act="qa-custom-close">Cancel</button>
+    </div>
+    <div class="qa-main">
+      <div class="qa-fields">
+        <select id="qa-game" aria-label="Game"></select>
+        <div class="wg"><input id="qa-wager" type="text" inputmode="numeric" autocomplete="off" placeholder="Wager (10m ok)" aria-label="Wager"></div>
+      </div>
+      <div class="qa-btns">
+        <button class="btn loss" type="button" data-act="qa-loss">LOSS <span class="kbd">L</span></button>
+        <button class="btn win" type="button" data-act="qa-win2">WIN ×2</button>
+        <button class="btn win3" type="button" data-act="qa-win3">WIN ×3</button>
+        <button class="btn" type="button" data-act="qa-custom">Custom <span class="kbd">W</span></button>
+        <button class="btn ghost" type="button" data-act="undo" aria-label="Undo last entry">Undo <span class="kbd">Z</span></button>
+      </div>
+    </div>
+    <div id="qa-hint" class="qa-hint"></div>
+  </div>
+</section>
+<div id="toast" class="toast" role="status" hidden></div>
+<div id="tip" class="tip" hidden></div>
+
+<script>
+'use strict';
+/* ==================================================================
+   PURE CALCULATIONS  (window.BatCalc exposes these for testing)
+   ================================================================== */
+const APP_VERSION='2.0.0';
+const DEFAULT_GAMES = ["Gamble","Duel","Heist","Other"];
+const DEFAULT_PRESETS = {"Gamble":{mult:2,p:.4},"Duel":{mult:2,p:.5},"Heist":{mult:2,p:.4},"Other":{mult:2,p:.45}};
+const DEF_RESULT = [
+  String.raw`Rolled (?<roll>\d+), @?(?<user>\w+) (?<kind>won|lost) (?<amount>[\d,]+) [\w-]+ and now has (?<total>[\d,]+)`,
+  String.raw`@?(?<user>\w+) rolled (?<roll>\d+) and (?<kind>won|lost) (?<amount>[\d,]+) [\w-]+ and now has (?<total>[\d,]+)`,
+  String.raw`@?(?<user>\w+) (?<kind>won|lost) (?<amount>[\d,]+)`
+].join('\n');
+const DEF_CMDMAP = 'gamble = Gamble\nduel = Duel\nheist = Heist';
+const DEFAULT_THRESH = {chaseMult:2,tiltLossStreak:3,hotMinBets:30,coldRoi:-15,badHourMinBets:20,badHourGap:15,winStreakWarn:5,lowBankrollMult:10,allInPct:50,sessionGapHours:3};
+const BUCKETS = [{label:'<1%',max:.01},{label:'1–5%',max:.05},{label:'5–10%',max:.10},{label:'10–25%',max:.25},{label:'25–99%',max:.99},{label:'All-in',max:Infinity}];
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const ADJ = 'Adjustment';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const safeDiv=(a,b)=>(b?a/b:0);
+const isAdj=b=>b.game===ADJ;
+const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
+function std(a){ if(a.length<2) return 0; const m=mean(a); return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/(a.length-1)); }
+function median(a){ if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function quantile(sorted,q){ if(!sorted.length) return 0; const i=clamp((sorted.length-1)*q,0,sorted.length-1), lo=Math.floor(i), hi=Math.ceil(i); return sorted[lo]+(sorted[hi]-sorted[lo])*(i-lo); }
+function sampleBadge(n){ return n<30?{cls:'small-s',label:'small sample'}:n<=100?{cls:'mod-s',label:'moderate'}:{cls:'solid-s',label:'solid'}; }
+function parseAmount(v){ if(v==null) return NaN; let s=String(v).trim().toLowerCase().replace(/[,\s_]/g,''); if(!s) return NaN; let m=1; if(s.endsWith('k')){m=1e3;s=s.slice(0,-1);} else if(s.endsWith('m')){m=1e6;s=s.slice(0,-1);} else if(s.endsWith('b')){m=1e9;s=s.slice(0,-1);} if(!/^\d*\.?\d+$/.test(s)) return NaN; const n=parseFloat(s); return isFinite(n)?n*m:NaN; }
+
+/** Sort entries by time and recompute balanceAfter + multiplier. */
+function normalizeBets(bets,startBal){
+  const sorted=[...bets].sort((a,b)=> (a.ts<b.ts?-1:a.ts>b.ts?1:0));
+  let bal=startBal||0;
+  return sorted.map(b=>{ const wager=Math.max(0,Math.round(+b.wager||0)), net=Math.round(+b.net||0); bal+=net;
+    return {...b,wager,net,balanceAfter:bal,multiplier: wager>0? +((wager+net)/wager).toFixed(4) : null, tags:Array.isArray(b.tags)?b.tags:[]}; });
+}
+
+/** Every aggregate the dashboards need, in one pass. */
+function summarize(data){
+  const S=data.settings, T={...DEFAULT_THRESH,...(S.thresholds||{})};
+  const all=data.bets, start=+S.startingBalance||0;
+  const balance= all.length? all[all.length-1].balanceAfter : start;
+  const sessMeta=Object.fromEntries((data.sessions||[]).map(s=>[s.id,s]));
+  const real=[], returns=[], winMults=[], series=[{bal:start,ts:null,sid:null,start:true}];
+  let wagered=0,net=0,wins=0,losses=0,bigWin=null,bigLoss=null;
+  let cur=0,curType=null,longW=0,longL=0;
+  let peak=start, maxDD=0, maxDDPct=0, wagerSum=0, passiveSum=0;
+  const byGame={}, buckets=BUCKETS.map(b=>({...b,n:0,wins:0,wagered:0,net:0}));
+  const hours=Array.from({length:24},()=>({n:0,wagered:0,net:0})), days=Array.from({length:7},()=>({n:0,wagered:0,net:0}));
+  const flags={}, sess={};
+  for(const b of all){
+    series.push({bal:b.balanceAfter,ts:b.ts,sid:b.sessionId,game:b.game,net:b.net,adj:isAdj(b),wager:b.wager,roll:b.roll});
+    if(b.balanceAfter>peak) peak=b.balanceAfter;
+    const dd=peak-b.balanceAfter; if(dd>maxDD) maxDD=dd; const ddp=peak>0?dd/peak:0; if(ddp>maxDDPct) maxDDPct=ddp;
+    if(isAdj(b)){ if(b.net>0 && b.sessionId && (b.tags||[]).includes('between-bets')) passiveSum+=b.net; continue; }
+    if(!(b.wager>0)) continue;
+    const before=b.balanceAfter-b.net, frac= before>0? b.wager/before : 1;
+    const prev=real[real.length-1], prev2=real[real.length-2];
+    const avgSoFar= real.length? wagerSum/real.length : b.wager;
+    const chase= !!(prev && prev.net<0) && ( (real.length>=3 && b.wager> T.chaseMult*avgSoFar) || (!!prev2 && prev2.net<0 && b.wager>prev.wager && prev.wager>prev2.wager) );
+    const sid=b.sessionId||'none';
+    const ss= sess[sid] || (sess[sid]={id:sid,n:0,net:0,wagered:0,wins:0,games:{},chase:0,oversized:0,allIn:0,afterStop:0,firstTs:b.ts,lastTs:b.ts,startBal:(sessMeta[sid]?.startBalance ?? before)});
+    const stopLine=-(S.stopLossPct/100)*ss.startBal;
+    const afterStop= ss.startBal>0 && ss.net<=stopLine;
+    const f={chase,oversized:frac*100>S.maxBetPctOfBankroll,allIn:frac*100>=T.allInPct,afterStop,frac,before};
+    flags[b.id]=f;
+    real.push(b); wagerSum+=b.wager;
+    wagered+=b.wager; net+=b.net; returns.push(b.net/b.wager);
+    const win=b.net>0, loss=b.net<0;
+    if(win){wins++; winMults.push(b.multiplier);} if(loss) losses++;
+    if(!bigWin||b.net>bigWin.net) bigWin=b; if(!bigLoss||b.net<bigLoss.net) bigLoss=b;
+    const t= win?'W':loss?'L':null;
+    if(t && t===curType) cur++; else {cur=t?1:0; curType=t;}
+    if(curType==='W') longW=Math.max(longW,cur); if(curType==='L') longL=Math.max(longL,cur);
+    const g= byGame[b.game] || (byGame[b.game]={game:b.game,n:0,wins:0,wagered:0,net:0,winMults:[],mults:[]});
+    g.n++; g.wagered+=b.wager; g.net+=b.net; g.mults.push(b.multiplier); if(win){g.wins++; g.winMults.push(b.multiplier);}
+    const bk= buckets.find(x=>frac<x.max) || buckets[buckets.length-1];
+    bk.n++; bk.wagered+=b.wager; bk.net+=b.net; if(win) bk.wins++;
+    const d=new Date(b.ts); const h=hours[d.getHours()], dy=days[d.getDay()];
+    h.n++; h.wagered+=b.wager; h.net+=b.net; dy.n++; dy.wagered+=b.wager; dy.net+=b.net;
+    ss.n++; ss.net+=b.net; ss.wagered+=b.wager; if(win) ss.wins++; ss.lastTs=b.ts;
+    const sg= ss.games[b.game] || (ss.games[b.game]={n:0,net:0}); sg.n++; sg.net+=b.net;
+    if(chase) ss.chase++; if(f.oversized) ss.oversized++; if(f.allIn) ss.allIn++; if(afterStop) ss.afterStop++;
+  }
+  const games=Object.values(byGame).map(g=>({...g,winRate:safeDiv(g.wins,g.n),roi:safeDiv(g.net,g.wagered),avgWinMult:mean(g.winMults),avgMult:mean(g.mults)})).sort((a,b)=>b.n-a.n);
+  const sessions=(data.sessions||[]).slice().sort((a,b)=>a.start<b.start?-1:1).map(s=>{
+    const st=sess[s.id]||{n:0,net:0,wagered:0,wins:0,games:{},chase:0,oversized:0,allIn:0,afterStop:0};
+    const g=Object.entries(st.games||{}).sort((a,b)=>b[1].net-a[1].net);
+    const endMs= s.end? +new Date(s.end) : Date.now();
+    const durH= Math.max(0,(endMs-+new Date(s.start))/36e5);
+    const violations= st.chase+st.oversized+st.afterStop;
+    return {...s, ...st, id:s.id, start:s.start, end:s.end, startBalance:s.startBalance, durH, betsPerHour: durH>0? st.n/durH : 0,
+      best:g[0]?{game:g[0][0],net:g[0][1].net}:null, worst:g.length>1?{game:g[g.length-1][0],net:g[g.length-1][1].net}:null,
+      roi:safeDiv(st.net,st.wagered), winRate:safeDiv(st.wins,st.n), violations, disciplined: !!s.end && st.n>0 && violations===0 };
+  });
+  const currentSession=sessions.find(s=>!s.end)||null;
+  const lastSession=sessions[sessions.length-1]||null;
+  let discStreak=0; for(let i=sessions.length-1;i>=0;i--){ const s=sessions[i]; if(!s.end||s.n===0) continue; if(s.disciplined) discStreak++; else break; }
+  const sessHours=sessions.reduce((s,x)=>s+x.durH,0);
+  const recent=real.slice(-50);
+  return {
+    settings:S, T, start, balance, real, returns, series, flags, games, buckets, hours, days, sessions, currentSession, lastSession, discStreak,
+    totalBets:real.length, wagered, net, roi:safeDiv(net,wagered), wins, losses, winRate:safeDiv(wins,real.length),
+    avgBet:safeDiv(wagered,real.length), avgBetRecent: recent.length? mean(recent.map(b=>b.wager)) : 0,
+    avgWinMult:mean(winMults), bigWin, bigLoss, curStreak:cur, curType, longW, longL,
+    peak, maxDD, maxDDPct, curDD: Math.max(0,peak-balance), curDDPct: peak>0? Math.max(0,peak-balance)/peak : 0,
+    volatility: std(returns), mults: real.map(b=>b.multiplier),
+    passivePerHour: sessHours>=.5? passiveSum/sessHours : null, passiveSum, sessHours
+  };
+}
+
+function hourBlocks(agg){ const out=[]; for(let s=0;s<24;s+=3){ let n=0,w=0,nt=0; for(let h=s;h<s+3;h++){n+=agg.hours[h].n;w+=agg.hours[h].wagered;nt+=agg.hours[h].net;} out.push({from:s,to:s+3,n,wagered:w,net:nt,roi:safeDiv(nt,w)}); } return out; }
+function lateNight(agg){ let n=0,w=0,nt=0; for(let h=0;h<5;h++){n+=agg.hours[h].n;w+=agg.hours[h].wagered;nt+=agg.hours[h].net;} const ow=agg.wagered-w, on=agg.net-nt; return {n,roi:safeDiv(nt,w),otherRoi:safeDiv(on,ow),otherN:agg.totalBets-n}; }
+
+/** Tilt score 0–100 from loss streak, bet escalation, pace and time without a break. */
+function tiltScore(agg,nowMs){
+  const sid=agg.currentSession?.id;
+  const bets= sid? agg.real.filter(b=>b.sessionId===sid) : agg.real.slice(-20);
+  if(!bets.length) return {score:0,parts:[],n:0,lossStreak:0,ratio:1,paceR:1};
+  const last=bets[bets.length-1];
+  let ls=0; for(let i=bets.length-1;i>=0&&bets[i].net<0;i--) ls++;
+  const base= median(bets.slice(0,-1).map(b=>b.wager)) || agg.avgBet || last.wager;
+  const ratio= safeDiv(last.wager,base)||1;
+  const tl=+new Date(last.ts), t0=+new Date(bets[0].ts);
+  const ref= agg.currentSession? Math.max(nowMs||tl,tl) : tl;
+  const recentN= bets.filter(b=>tl-+new Date(b.ts)<=6e5).length;
+  const sessRate= bets.length/Math.max(10,(tl-t0)/6e4)*10;
+  const paceR= bets.length>=6? recentN/Math.max(1,sessRate) : 1;
+  let lastBreakEnd=t0; for(let i=1;i<bets.length;i++){ const a=+new Date(bets[i-1].ts), b=+new Date(bets[i].ts); if(b-a>=6e5) lastBreakEnd=b; }
+  const sinceBreak=Math.max(0,(ref-lastBreakEnd)/6e4);
+  const parts=[
+    {k:'Loss streak',v:`${ls} in a row`,w:Math.min(ls,6)/6*35},
+    {k:'Bet escalation',v:`${ratio.toFixed(1)}× your usual`,w:clamp((ratio-1)/2,0,1)*30},
+    {k:'Pace (last 10 min)',v:`${paceR.toFixed(1)}× normal`,w:clamp(paceR-1,0,1.5)/1.5*20},
+    {k:'Since last break',v:`${Math.round(sinceBreak)} min`,w:clamp(sinceBreak/120,0,1)*15}
+  ];
+  return {score:Math.round(parts.reduce((s,p)=>s+p.w,0)),parts,n:bets.length,lossStreak:ls,ratio,paceR};
+}
+
+/** Odds board from every gamble result seen in chat (all users). */
+function oddsBoard(rolls){
+  const n=rolls.length, wins=rolls.filter(x=>x.won), losses=rolls.filter(x=>!x.won);
+  const withRoll=rolls.filter(x=>x.roll!=null);
+  const minWin=Math.min(...withRoll.filter(x=>x.won).map(x=>x.roll)), maxLoss=Math.max(...withRoll.filter(x=>!x.won).map(x=>x.roll));
+  const cells=Array.from({length:100},()=>({w:0,l:0})); withRoll.forEach(x=>{ const c=cells[clamp(x.roll,1,100)-1]; if(x.won) c.w++; else c.l++; });
+  const known=wins.filter(x=>x.wager>0).map(x=>x.amount/x.wager);
+  const multGroups={}; known.forEach(m=>{ const k=(Math.round(m*10)/10).toFixed(1); multGroups[k]=(multGroups[k]||0)+1; });
+  const avgMult= known.length? mean(known) : 2;
+  const winRate=safeDiv(wins.length,n);
+  const clean= isFinite(minWin) && isFinite(maxLoss) && maxLoss<minWin;
+  const theoP= clean? (101-minWin)/100 : null;
+  return {n, wins:wins.length, losses:losses.length, winRate, minWin:isFinite(minWin)?minWin:null, maxLoss:isFinite(maxLoss)?maxLoss:null, clean, theoP, cells,
+    avgMult, multN:known.length, multGroups, ev: n? winRate*avgMult-1 : null, theoEv: theoP!=null? theoP*avgMult-1 : null, rolled:withRoll.length};
+}
+/** Latest known balance per chatter (from "now has N"), plus each chatter's net since a timestamp. */
+function chatBoard(rolls,me,sinceIso,avgMult){
+  const latest={}, netSince={};
+  for(const r of rolls){ const u=r.user.toLowerCase(); if(r.total!=null && (!latest[u]||r.ts>=latest[u].ts)) latest[u]={user:r.user,total:r.total,ts:r.ts};
+    if(sinceIso && r.ts>=+new Date(sinceIso)){ const w=r.wager>0? r.wager : (r.won? r.amount/(avgMult||2) : r.amount); const nt= r.won? r.amount-w : -r.amount; netSince[u]=netSince[u]||{user:r.user,net:0,n:0}; netSince[u].net+=nt; netSince[u].n++; } }
+  const rich=Object.values(latest).sort((a,b)=>b.total-a.total);
+  const myRank= rich.findIndex(x=>x.user.toLowerCase()===String(me||'').toLowerCase());
+  return {rich, myRank: myRank>=0? myRank+1 : null, players:rich.length, session:Object.values(netSince).sort((a,b)=>b.net-a.net)};
+}
+
+/** Outcome distribution (multipliers) for sims: chat rolls > your bets > preset. */
+function outcomesFor(agg,game,presets,odds){
+  const own= game==='__all'? agg.mults : (agg.games.find(g=>g.game===game)?.mults||[]);
+  if((game==='__all'||game==='Gamble') && odds && odds.n>=50){
+    const list=[]; const winsM=[]; for(const c of odds._rolls) list.push(c.won? (c.wager>0? c.amount/c.wager : odds.avgMult) : 0);
+    return {list,source:'chat',n:odds.n};
+  }
+  if(own.length>=10) return {list:own,source:'data',n:own.length};
+  const pr= game==='__all'? (presets.Gamble||{mult:2,p:.4}) : (presets[game]||{mult:2,p:.45});
+  const arr=[]; const k=Math.round(clamp(pr.p,0,1)*1000); for(let i=0;i<1000;i++) arr.push(i<k?pr.mult:0);
+  return {list:arr,source:'preset',n:own.length,preset:pr};
+}
+function kellyFrom(list){
+  if(!list.length) return {f:0,edge:0,p:0,b:0};
+  const winsL=list.filter(m=>m>1), p=winsL.length/list.length, b=mean(winsL)-1, edge=mean(list)-1;
+  const f= b>0? (p*b-(1-p))/b : 0;
+  return {f: edge>0? Math.max(0,f):0, edge, p, b};
+}
+
+/** Strategy bet rules. next(s) returns the next wager; 0 stops the session. */
+function makeStrategy(key,o){
+  const base1=Math.max(1,Math.round(o.start*.01)), base2=Math.max(1,Math.round(o.start*.02));
+  const SL=(o.stopLossPct??20)/100, TP=(o.takeProfitPct??30)/100;
+  switch(key){
+    case 'flat': case 'best': return {next:()=>base2};
+    case 'kelly': return {next:s=> o.kellyF>0? Math.max(1,Math.floor(s.bal*o.kellyF/2)) : 0};
+    case 'martingale': return {next:s=> s.lastWin===false? s.lastBet*2 : base1};
+    case 'paroli': return {next:s=>{ if(s.lastWin===true && s.step<2){s.step++; return s.lastBet*2;} s.step=0; return base1; }};
+    case 'p1326': { const seq=[1,3,2,6]; return {next:s=>{ if(s.lastWin===true){ s.step++; if(s.step>3) s.step=0; } else s.step=0; return base1*seq[s.step]; }}; }
+    case 'ladder': return {next:s=> (s.bal<=o.start*(1-SL)||s.bal>=o.start*(1+TP))? 0 : base2};
+    case 'tiers': { const play=o.start*.3, floor=o.start-play, bet=Math.max(1,Math.round(play*.05)); return {next:s=> s.bal-bet<floor? 0 : bet}; }
+    case 'goal': { const target=o.goal||o.start*1.5, m=Math.max(1.01,o.avgMult||2); return {next:s=> s.bal>=target? 0 : Math.max(1,Math.ceil((target-s.bal)/(m-1)))}; }
+    case 'passive': return {next:()=>0};
+    default: return {next:()=>base2};
+  }
+}
+function simulate({key,start,outcomes,nBets=100,runs=1000,o={},rand=Math.random}){
+  const finals=new Array(runs); const L=outcomes.length;
+  if(key==='passive'){ const gain=(o.passivePerHour||0)*(nBets/Math.max(1,o.betsPerHour||40)); finals.fill(start+gain); return distStats(finals,start); }
+  for(let r=0;r<runs;r++){
+    const st=makeStrategy(key,{...o,start}); const s={bal:start,lastBet:0,lastWin:null,step:0};
+    for(let i=0;i<nBets;i++){
+      let bet=Math.round(st.next(s)); if(!(bet>0)) break; if(bet>s.bal) bet=s.bal; if(bet<1) break;
+      const m= L? outcomes[(rand()*L)|0] : 0;
+      s.bal+=Math.round(bet*m)-bet; s.lastBet=bet; if(m>1) s.lastWin=true; else if(m<1) s.lastWin=false;
+    }
+    finals[r]=s.bal;
+  }
+  return distStats(finals,start);
+}
+function distStats(finals,start){
+  const s=[...finals].sort((a,b)=>a-b), n=s.length||1;
+  return {finals:s,median:quantile(s,.5),p5:quantile(s,.05),p95:quantile(s,.95),mean:mean(s),
+    pProfit:s.filter(x=>x>start).length/n, pBust:s.filter(x=>x<start*.1).length/n, min:s[0]??0, max:s[s.length-1]??0, start};
+}
+function riskOfRuin({start,bet,outcomes,runs=1000,nBets=200,rand=Math.random}){
+  if(!(bet>0)||!outcomes.length) return null; let ruined=0; const L=outcomes.length;
+  for(let r=0;r<runs;r++){ let bal=start; for(let i=0;i<nBets;i++){ if(bal<bet){ruined++;break;} bal+=Math.round(bet*outcomes[(rand()*L)|0])-bet; } }
+  return ruined/runs;
+}
+function goalProbability({start,target,floor,bet,outcomes,runs=1000,maxBets=2000,rand=Math.random}){
+  if(start>=target) return 1; if(!(bet>0)||!outcomes.length) return null; let hit=0; const L=outcomes.length;
+  for(let r=0;r<runs;r++){ let bal=start; for(let i=0;i<maxBets;i++){ const b=Math.min(bet,bal); if(b<1||bal<=floor) break; bal+=Math.round(b*outcomes[(rand()*L)|0])-b; if(bal>=target){hit++;break;} } }
+  return hit/runs;
+}
+
+/* ---------- chat parsing ---------- */
+function compileRegexList(src){ const out=[], errors=[]; String(src||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(p=>{ try{out.push(new RegExp(p,'i'));}catch(e){errors.push(p+' → '+e.message);} }); return {list:out,errors}; }
+function parseCmdMap(src){ const m={}; String(src||'').split('\n').forEach(l=>{ const [k,v]=l.split('=').map(s=>(s||'').trim()); if(k&&v) m[k.replace(/^!/,'').toLowerCase()]=v; }); return m; }
+/** One chat message → {type:'result'|'cmd', ...} or null. */
+function parseEvent(ev,cfg,compiled){
+  const author=String(ev.author||'').trim(), text=String(ev.text||'').trim();
+  const bots=String(cfg.bots||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  if(!author || bots.includes(author.toLowerCase())){
+    for(const re of (compiled||compileRegexList(cfg.resultRegex)).list){ const m=text.match(re); if(!m||!m.groups) continue; const g=m.groups;
+      const kind=/^(won|wins|win)$/i.test(g.kind||'')?'won':/^(lost|loses|lose)$/i.test(g.kind||'')?'lost':null;
+      if(!kind||!g.user) continue; const amount=parseAmount(g.amount); if(!(amount>=0)) continue;
+      return {type:'result',user:g.user.replace(/^@/,''),kind,amount,total:g.total!=null?parseAmount(g.total):null,roll:g.roll!=null?+g.roll:null}; }
+    if(author) return null;
+  }
+  const cm=text.match(/^!(\w+)(?:\s+(\S+))?/); if(cm&&author) return {type:'cmd',user:author,cmd:cm[1].toLowerCase(),arg:cm[2]||''};
+  return null;
+}
+/** Pasted chat text → events. Accepts "Name: message" lines with optional [hh:mm] prefix. */
+function linesToEvents(text){
+  const base=Date.now(); const out=[]; String(text||'').split(/\r?\n/).forEach((raw,i)=>{ let line=raw.trim(); if(!line) return;
+    let ts=base-100000+i*100; const tm=line.match(/^\[?(\d{1,2}):(\d{2})(?::(\d{2}))?\]?\s*/); if(tm){ const d=new Date(); d.setHours(+tm[1],+tm[2],+(tm[3]||0),0); if(+d<=base+6e4) ts=+d+i; line=line.slice(tm[0].length); }
+    const am=line.match(/^([A-Za-z0-9_]{2,25}):\s+(.*)$/); out.push(am? {id:'p'+i+'-'+base,ts,author:am[1],text:am[2],raw} : {id:'p'+i+'-'+base,ts,author:'',text:line,raw}); });
+  return out;
+}
+/**
+ * Turn chat events into bets/adjustments/chat rolls. Pure: returns a plan, changes nothing.
+ * ctx = {cfg, presets, balance, seenKeys:Set, pending:{user:{cmd,arg,ts}}}
+ */
+function planIngest(events,ctx){
+  const cfg=ctx.cfg, me=String(cfg.username||'').toLowerCase(), compiled=compileRegexList(cfg.resultRegex), cmdGame=parseCmdMap(cfg.commandGames);
+  const seen=new Set(ctx.seenKeys||[]), pending={...(ctx.pending||{})}, out={entries:[],chat:[],keys:[],rows:[],pending:null,balance:0};
+  let bal=ctx.balance||0;
+  for(const ev of [...events].sort((a,b)=>a.ts-b.ts)){
+    const p=parseEvent(ev,cfg,compiled);
+    if(!p){ out.rows.push({ev,status:'skip',reason:'not a gamble line'}); continue; }
+    const u=p.user.toLowerCase();
+    if(p.type==='cmd'){ if(cmdGame[p.cmd]){ pending[u]={cmd:p.cmd,arg:p.arg,ts:ev.ts}; out.rows.push({ev,status:'cmd',user:p.user,game:cmdGame[p.cmd]}); } else out.rows.push({ev,status:'skip',reason:`!${p.cmd} is not a betting command`}); continue; }
+    const key=[u,p.roll,p.kind,p.amount,p.total].join('|');
+    if(seen.has(key)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; }
+    seen.add(key); out.keys.push(key);
+    const pd= pending[u] && ev.ts-pending[u].ts<=120000 && ev.ts>=pending[u].ts ? pending[u] : null; if(pd) delete pending[u];
+    const game= pd? cmdGame[pd.cmd] : (cfg.defaultGame||'Gamble');
+    const mult=(ctx.presets?.[game]?.mult)||2, payoutMode=cfg.winAmount!=='profit';
+    const allIn= !!pd && /^all$/i.test(pd.arg);
+    let known=null; if(pd && !allIn){ if(/%$/.test(pd.arg)){ if(u===me) known=Math.round(bal*parseFloat(pd.arg)/100); } else { const a=parseAmount(pd.arg); if(a>0) known=a; } }
+    const won=p.kind==='won'; let wager, net;
+    if(!won){ wager=p.amount; net=-p.amount; }
+    else if(payoutMode){ wager= known ?? Math.round(p.amount/mult); net=p.amount-wager; }
+    else { wager= known ?? Math.round(p.amount/Math.max(.01,mult-1)); net=p.amount; }
+    out.chat.push({ts:ev.ts,user:p.user,roll:p.roll,won,amount:p.amount,total:p.total,wager:(!won||known)? wager : null,game});
+    if(u===me){
+      if(p.total!=null){ const implied=p.total-net; if(implied!==bal){ out.entries.push({kind:'adj',ts:ev.ts-1,net:implied-bal,first:bal===0,note: bal===0?`Starting balance from chat (${fmt(implied)})`:`Balance change between bets (passive points, rewards, other games)`}); bal=implied; } }
+      out.entries.push({kind:'bet',ts:ev.ts,game,wager,net,roll:p.roll,allIn,cmd: pd? `!${pd.cmd} ${pd.arg}` : '',total:p.total});
+      bal+=net;
+    }
+    out.rows.push({ev,status:u===me?'mine':'chat',user:p.user,won,amount:p.amount,wager,net,roll:p.roll,total:p.total,game});
+  }
+  out.pending=pending; out.balance=bal; return out;
+}
+
+/** Recommendation engine. */
+const SEV={critical:0,caution:1,positive:2,info:3};
+const SEV_ICON={critical:'🔴',caution:'🟡',positive:'🟢',info:'🔵'};
+function recommendations(agg,data,ctx={}){
+  const S=agg.settings, T=agg.T, cur=S.currencyName||'points', out=[];
+  const add=(sev,title,d,action,pri=0)=>out.push({sev,title,data:d,action,pri});
+  const od=ctx.odds;
+  if(od && od.n>=50 && od.ev!=null) add(od.ev<0?'info':'positive','The house edge',`Chat's ${fmt(od.n)} rolls: ${pct(od.winRate)} win at ×${od.avgMult.toFixed(2)} → ${pctS(od.ev)} per bet`,od.ev<0?`Every bet loses ${Math.abs(od.ev*100).toFixed(1)}% on average. Smaller bets just lose slower.`:'Chat is running hot so far. That is likely variance, not an edge.',0);
+  if(!agg.totalBets){ add('info','No bets logged yet',`0 bets · balance ${fmt(agg.balance)}`,'Turn on auto-capture in Settings, or sync your balance on the Bet log tab.'); return out.sort((a,b)=>SEV[a.sev]-SEV[b.sev]||b.pri-a.pri); }
+  const last=agg.real[agg.real.length-1], lf=agg.flags[last.id]||{};
+  const cs=agg.currentSession;
+  if(cs && cs.startBalance>0){
+    const pctNet=cs.net/cs.startBalance;
+    if(pctNet<=-S.stopLossPct/100) add('critical','Stop-loss hit',`Session ${money(cs.net,true)} of ${money(cs.startBalance)} start (${pctS(pctNet)}) · limit −${S.stopLossPct}% · ${cs.n} bets`,'Walk away or drop to minimum bets.',10);
+    else if(pctNet>=S.takeProfitPct/100) add('positive','Take-profit reached',`Session ${money(cs.net,true)} (${pctS(pctNet)}) · target +${S.takeProfitPct}% · ${cs.n} bets`,'Bank it. End the session or limit yourself to 1% bets.',9);
+  }
+  const t=ctx.tilt;
+  if(t && t.lossStreak>=T.tiltLossStreak && (t.ratio>1.2 || t.paceR>1.3)) add('critical','Tilt warning',`Tilt ${t.score}/100 · ${t.lossStreak} losses in a row · bets ${t.ratio.toFixed(1)}× usual · pace ${t.paceR.toFixed(1)}×`,'Take a 10-minute break before the next bet.',9);
+  if(lf.allIn){ const g=agg.games.find(x=>x.game===last.game); const wr= od&&od.n>=50? od.winRate : g?.winRate||0; const n= od&&od.n>=50? od.n : g?.n||0; add('critical','All-in sized bet',`Last bet ${money(last.wager)} = ${(lf.frac*100).toFixed(0)}% of balance`,`A ${last.game} win comes up ${pct(wr)} of the time (${fmt(n)} ${od&&od.n>=50?'chat rolls':'of your bets'}${n<30?', small sample':''}). That is your survival odds per all-in.`,8); }
+  const recentChase=agg.real.slice(-5).filter(b=>agg.flags[b.id]?.chase).length;
+  if(lf.chase) add(recentChase>=2?'critical':'caution','Chasing losses',`${money(last.wager)} right after a loss · average bet ${money(agg.avgBet)} · ${recentChase} chase bet${recentChase===1?'':'s'} in the last 5`,'Reset to your base bet.',7);
+  if(lf.oversized && !lf.allIn) add('caution','Oversized bet',`Last bet was ${(lf.frac*100).toFixed(1)}% of your bankroll (limit ${S.maxBetPctOfBankroll}%)`,`Keep bets under ${money(Math.floor(agg.balance*S.maxBetPctOfBankroll/100))} ${cur} at your current balance.`,6);
+  if(agg.avgBetRecent>0 && agg.balance<T.lowBankrollMult*agg.avgBetRecent) add('caution','Bankroll running low',`Balance ${money(agg.balance)} is ${(agg.balance/agg.avgBetRecent).toFixed(1)}× your recent average bet (${money(agg.avgBetRecent)})`,'Switch to minimum bets or wait for passive earnings to rebuild.',6);
+  const solid=agg.games.filter(g=>g.n>=T.hotMinBets);
+  const cold=solid.filter(g=>g.roi*100<T.coldRoi).sort((a,b)=>a.roi-b.roi)[0];
+  if(cold) add('caution',`Cold game: ${cold.game}`,`${cold.game} ROI ${pctS(cold.roi)} over ${cold.n} bets (net ${money(cold.net,true)})`,`Consider dropping ${cold.game} or cutting its bet size.`,4);
+  const hot=solid.filter(g=>g.roi>0).sort((a,b)=>b.roi-a.roi)[0];
+  if(hot) add('positive',`${hot.game} is up for you`,`+${(hot.roi*100).toFixed(1)}% ROI over ${hot.n} bets`,'Variance is high. A good run can still be luck, so keep the same bet sizing.',3);
+  const blocks=hourBlocks(agg).filter(b=>b.n>=T.badHourMinBets);
+  const bad=blocks.filter(b=>(agg.roi-b.roi)*100>=T.badHourGap).sort((a,b)=>a.roi-b.roi)[0];
+  if(bad) add('caution',`Rough hours: ${hh(bad.from)}–${hh(bad.to)}`,`ROI ${pctS(bad.roi)} vs ${pctS(agg.roi)} overall · ${bad.n} bets in that window`,`You lose more between ${hh(bad.from)} and ${hh(bad.to)}. Consider sitting those out.`,4);
+  if(agg.curType==='W' && agg.curStreak>=T.winStreakWarn) add('info',`${agg.curStreak}-win streak`,`Current streak W${agg.curStreak} · longest ${agg.longW}`,'Nice run. Streaks do not predict the next roll, so keep the same bet size.',2);
+  if(ctx.goalEta) add('info','Goal pace',ctx.goalEta.data,ctx.goalEta.action,1);
+  const le=[...agg.sessions].reverse().find(s=>s.end&&s.n>0);
+  if(le && le.disciplined && !cs) add('positive','Disciplined session',`Last session ${money(le.net,true)} over ${le.n} bets · no rule breaks · streak ${agg.discStreak}`,`${agg.discStreak} disciplined session${agg.discStreak===1?'':'s'} in a row. Keep the same limits next stream.`,5);
+  return out.sort((a,b)=>SEV[a.sev]-SEV[b.sev]||b.pri-a.pri);
+}
+
+/* ==================================================================
+   FORMATTING
+   ================================================================== */
+function fmt(n){ return Math.round(+n||0).toLocaleString('en-US'); }
+function fmtS(n){ n=Math.round(+n||0); return (n>0?'+':n<0?'−':'')+Math.abs(n).toLocaleString('en-US'); }
+/** Big-number friendly: 160.01M, 1.25B, 950,000. */
+function money(n,signed){ n=Math.round(+n||0); const a=Math.abs(n), s= signed? (n>0?'+':n<0?'−':'') : (n<0?'−':''); let body;
+  if(a>=1e9) body=(a/1e9).toFixed(a>=1e11?0:2)+'B'; else if(a>=1e7) body=(a/1e6).toFixed(a>=1e8?1:2)+'M'; else body=a.toLocaleString('en-US'); return s+body; }
+function pct(x,d=1){ return isFinite(x)?(x*100).toFixed(d)+'%':'—'; }
+function pctS(x,d=1){ return isFinite(x)? (x>0?'+':x<0?'−':'')+Math.abs(x*100).toFixed(d)+'%' : '—'; }
+function compact(n){ const a=Math.abs(n), s=n<0?'−':''; if(a>=1e9) return s+(a/1e9).toFixed(1)+'B'; if(a>=1e6) return s+(a/1e6).toFixed(a>=1e7?0:1)+'M'; if(a>=1e4) return s+Math.round(a/1e3)+'k'; if(a>=1e3) return s+(a/1e3).toFixed(1)+'k'; return s+Math.round(a); }
+function hh(h){ return String(h%24).padStart(2,'0')+':00'; }
+function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function cls(n){ return n>0?'pos':n<0?'neg':''; }
+function dur(h){ if(!(h>0)) return '0m'; const m=Math.round(h*60); return m>=60? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`; }
+function when(ts){ const d=new Date(ts); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+function ago(ms){ const s=Math.max(0,Math.round(ms/1000)); return s<60? s+'s ago' : s<3600? Math.round(s/60)+'m ago' : Math.round(s/3600)+'h ago'; }
+
+window.BatCalc={normalizeBets,summarize,tiltScore,simulate,riskOfRuin,goalProbability,parseEvent,linesToEvents,planIngest,recommendations,kellyFrom,outcomesFor,oddsBoard,chatBoard,parseAmount,distStats,hourBlocks,money};
+
+/* ==================================================================
+   STATE & STORAGE
+   ================================================================== */
+const LS_KEY='batgasm-tracker-v2';
+const uid=()=> (window.crypto&&crypto.randomUUID)? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+function defaultSettings(){ return {startingBalance:0,currencyName:'Bat-Coins',stopLossPct:20,takeProfitPct:30,maxBetPctOfBankroll:5,
+  games:[...DEFAULT_GAMES], gamePresets:JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
+  chatParser:{enabled:true,username:'SireBlade',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
+  thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, theme:'dark'}; }
+function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
+function migrate(d){
+  const base=emptyData(); if(!d||typeof d!=='object') return base;
+  const s={...base.settings,...(d.settings||{})};
+  s.chatParser={...base.settings.chatParser,...(s.chatParser||{})};
+  if(!s.chatParser.resultRegex) s.chatParser.resultRegex=DEF_RESULT;
+  s.thresholds={...DEFAULT_THRESH,...(s.thresholds||{})};
+  s.gamePresets={...base.settings.gamePresets,...(s.gamePresets||{})};
+  if(!Array.isArray(s.games)||!s.games.length) s.games=[...DEFAULT_GAMES];
+  return {settings:s,sessions:Array.isArray(d.sessions)?d.sessions:[],bets:Array.isArray(d.bets)?d.bets:[],goals:Array.isArray(d.goals)?d.goals:[],
+    chat:{rolls:Array.isArray(d.chat?.rolls)?d.chat.rolls:[]}, meta:{seenKeys:[],evIds:[],pending:{},...(d.meta||{}),initialized:true}};
+}
+let storageOK=true;
+function loadData(){ try{ const raw=localStorage.getItem(LS_KEY); if(raw) return migrate(JSON.parse(raw)); }catch(e){ storageOK=false; } return null; }
+function saveData(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(DATA)); storageOK=true; }catch(e){ storageOK=false; } }
+
+let DATA = loadData();
+let VER=0, AGG=null, AGG_VER=-1, ODDS=null, ODDS_VER=-1;
+const MC_CACHE={};
+function getAgg(){ if(AGG_VER!==VER){ AGG=summarize(DATA); AGG_VER=VER; } return AGG; }
+function getOdds(){ if(ODDS_VER!==VER){ ODDS=oddsBoard(DATA.chat.rolls); ODDS._rolls=DATA.chat.rolls; ODDS_VER=VER; } return ODDS; }
+function commit(opts={}){ DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; for(const k in MC_CACHE) delete MC_CACHE[k]; saveData(); if(!opts.silent) render(); }
+
+/* ---------- demo data ---------- */
+const DEMO_SEED=150;
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function makeDemo(seed=DEMO_SEED){
+  const rnd=mulberry32(seed), bets=[], sessions=[], rolls=[];
+  const plan=[{d:13,h:20,m:10,n:24},{d:11,h:21,m:40,n:26},{d:9,h:23,m:30,n:28,late:true},{d:6,h:19,m:5,n:22},{d:3,h:23,m:50,n:27,late:true},{d:1,h:20,m:30,n:24}];
+  const others=['demo_viper','demo_lucky','demo_owl','demo_rook','demo_moth','demo_kite','demo_crab'].map((u,i)=>({u,bal:[420e6,260e6,180e6,95e6,60e6,22e6,4e6][i]}));
+  let bal=150e6; const step=1e5; const r100=()=>1+Math.floor(rnd()*100);
+  plan.forEach((p,si)=>{
+    const d=new Date(); d.setDate(d.getDate()-p.d); d.setHours(p.h,p.m,0,0); let t=+d;
+    const sid='demo-s'+si;
+    if(si===0) bets.push({id:'demo-adj',ts:new Date(t-60000).toISOString(),sessionId:null,game:ADJ,command:'',wager:0,net:bal,tags:['sync','start'],notes:'Demo starting balance',demo:true});
+    sessions.push({id:sid,start:new Date(t).toISOString(),end:null,startBalance:bal,notes:p.late?'Late stream':'',demo:true});
+    let lastNet=0, lastW=0;
+    for(let i=0;i<p.n;i++){
+      t+= (60+rnd()*200)*1000 + (rnd()<.06? 12*60000:0);
+      if(i&&i%5===0){ const pas=Math.round(150+rnd()*300); bal+=pas; bets.push({id:`demo-p${si}-${i}`,ts:new Date(t-2000).toISOString(),sessionId:sid,game:ADJ,command:'',wager:0,net:pas,tags:['sync','auto','between-bets'],notes:'Balance change between bets',demo:true}); }
+      for(let k=0;k<2+Math.floor(rnd()*3);k++){ const o=others[Math.floor(rnd()*others.length)]; const w=Math.max(step,Math.round(o.bal*(.01+rnd()*.06)/step)*step); const ro=r100(); const won=ro>=61; o.bal+= won? w : -w; rolls.push({ts:t-5000-k*900,user:o.u,roll:ro,won,amount:won?2*w:w,total:o.bal,wager:w,game:'Gamble',demo:true}); }
+      const game= rnd()<.9? 'Gamble' : 'Duel';
+      let w=Math.max(step,Math.round(bal*(.01+rnd()*.025)/step)*step);
+      if(lastNet<0 && rnd()<.15) w=Math.round(lastW*2/step)*step;
+      if(rnd()<.012) w=Math.round(bal*.6/step)*step;
+      w=Math.min(w,bal); if(w<1) break;
+      const late=p.late && new Date(t).getHours()<5;
+      let roll=null, net;
+      if(game==='Gamble'){ roll= late? 1+Math.floor(rnd()*92) : r100(); net= roll>=61? w : -w; rolls.push({ts:t,user:'SireBlade',roll,won:net>0,amount:net>0?2*w:w,total:bal+net,wager:w,game,demo:true}); }
+      else net= rnd()<.5? w : -w;
+      bal+=net; lastNet=net; lastW=w;
+      bets.push({id:'demo-b'+si+'-'+i,ts:new Date(t).toISOString(),sessionId:sid,game,command:'!'+game.toLowerCase()+' '+w,wager:w,net,roll,tags:['auto'],notes:'',demo:true});
+    }
+    sessions[si].end=new Date(t+120000).toISOString();
+  });
+  return {bets,sessions,rolls,goals:[{id:'demo-g1',name:'Pass demo_lucky (260M)',target:260e6,created:new Date().toISOString(),demo:true}]};
+}
+function hasDemo(){ return DATA.bets.some(b=>b.demo)||DATA.sessions.some(s=>s.demo); }
+function addDemo(){ const d=makeDemo(); DATA.bets.push(...d.bets); DATA.sessions.push(...d.sessions); DATA.goals.push(...d.goals); DATA.chat.rolls.push(...d.rolls); }
+function loadDemo(){ clearDemo(true); addDemo(); commit(); toast('Demo data loaded'); }
+function clearDemo(silent){ DATA.bets=DATA.bets.filter(b=>!b.demo); DATA.sessions=DATA.sessions.filter(s=>!s.demo); DATA.goals=DATA.goals.filter(g=>!g.demo); DATA.chat.rolls=DATA.chat.rolls.filter(r=>!r.demo);
+  if(silent){ DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; } else { commit(); toast('Demo data cleared'); } }
+
+if(!DATA){ DATA=emptyData(); addDemo(); }
+DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance);
+
+/* ==================================================================
+   ACTIONS
+   ================================================================== */
+function openSession(){ return DATA.sessions.find(s=>!s.end)||null; }
+function lastActivity(s){ let t=+new Date(s.start); for(let i=DATA.bets.length-1;i>=0;i--){ if(DATA.bets[i].sessionId===s.id){ t=Math.max(t,+new Date(DATA.bets[i].ts)); break; } } return t; }
+/** Close an open session that has been idle longer than the gap. Returns the still-open session or null. */
+function activeSession(nowMs){ const s=openSession(); if(!s) return null; const gap=(DATA.settings.thresholds.sessionGapHours||3)*36e5; const la=lastActivity(s); if(nowMs-la>gap){ s.end=new Date(la+60000).toISOString(); return null; } return s; }
+function startSession(bal,tsMs){ const s={id:uid(),start:new Date(tsMs||Date.now()).toISOString(),end:null,startBalance:Math.round(bal),notes:''}; DATA.sessions.push(s); return s; }
+function endSession(){ const s=openSession(); if(!s) return; s.end=new Date().toISOString(); commit(); toast('Session ended'); }
+
+function logBet({game,wager,net,notes=''}){
+  wager=Math.round(wager); net=Math.round(net);
+  if(!(wager>0)){ toast('Enter a wager first'); $('#qa-wager').focus(); return; }
+  if(hasDemo()){ clearDemo(true); toast('Demo cleared. Logging your real bets now.'); }
+  const agg=getAgg(); const before=agg.balance;
+  if(before<=0){ toast(`Your tracked balance is ${fmt(before)}. Sync with !points first.`,{label:'Sync',fn:()=>$('#sync-bal')?.focus()}); return; }
+  let s=activeSession(Date.now()); if(!s) s=startSession(before);
+  const tags=['manual']; const frac=wager/before;
+  if(frac>=.99) tags.push('all-in'); if(frac*100>DATA.settings.maxBetPctOfBankroll) tags.push('oversized');
+  const b={id:uid(),ts:new Date().toISOString(),sessionId:s.id,game,command:'!'+String(game).toLowerCase().split('/')[0].replace(/\s+/g,'')+' '+wager,wager,net,tags,notes};
+  DATA.bets.push(b);
+  commit(); flashBalance(net);
+  toast(`${game} ${money(net,true)} · balance ${money(getAgg().balance)}`,{label:'Undo',fn:undo});
+}
+function undo(){ if(!DATA.bets.length){ toast('Nothing to undo'); return; } const b=DATA.bets[DATA.bets.length-1]; DATA.bets=DATA.bets.filter(x=>x.id!==b.id);
+  const s=DATA.sessions.find(x=>x.id===b.sessionId); if(s && !DATA.bets.some(x=>x.sessionId===s.id) && !s.end) DATA.sessions=DATA.sessions.filter(x=>x.id!==s.id);
+  commit(); toast(`Removed ${b.game} ${money(b.net,true)}`); }
+function syncBalance(actual){
+  if(!isFinite(actual)){ toast('Enter your !points balance'); return; }
+  actual=Math.round(actual); if(hasDemo()) clearDemo(true);
+  const bal=getAgg().balance, d=actual-bal;
+  if(d===0){ commit(); toast('Already in sync ✓'); return; }
+  const s=activeSession(Date.now());
+  DATA.bets.push({id:uid(),ts:new Date().toISOString(),sessionId:s?s.id:null,game:ADJ,command:'!points',wager:0,net:d,tags:['sync','manual'],notes:`Synced to ${fmt(actual)} from !points`});
+  commit(); toast(`Adjustment ${money(d,true)} · balance ${money(actual)}`);
+}
+function flashBalance(net){ const el=$('#hdr-bal'); el.classList.remove('flash-w','flash-l'); void el.offsetWidth; el.classList.add(net>0?'flash-w':'flash-l'); setTimeout(()=>el.classList.remove('flash-w','flash-l'),900); }
+
+/** Apply chat events (live capture or paste). Returns the plan used. */
+let FRESH=new Set();
+function ingestEvents(events,{source='live'}={}){
+  const S=DATA.settings;
+  const ctx=()=>({cfg:S.chatParser,presets:S.gamePresets,balance:getAgg().balance,seenKeys:DATA.meta.seenKeys,pending:DATA.meta.pending});
+  let plan=planIngest(events,ctx());
+  if(plan.entries.length && hasDemo()){ clearDemo(true); plan=planIngest(events,ctx()); }
+  DATA.chat.rolls.push(...plan.chat.map(r=>({...r}))); if(DATA.chat.rolls.length>20000) DATA.chat.rolls.splice(0,DATA.chat.rolls.length-20000);
+  DATA.meta.seenKeys=[...DATA.meta.seenKeys,...plan.keys].slice(-6000);
+  DATA.meta.pending=plan.pending;
+  let bal=getAgg().balance; const added=[];
+  for(const e of plan.entries){
+    if(e.kind==='adj'){ const s=activeSession(e.ts);
+      const id=uid(); DATA.bets.push({id,ts:new Date(e.ts).toISOString(),sessionId:s?s.id:null,game:ADJ,command:'',wager:0,net:e.net,tags:e.first?['sync','auto','start']:['sync','auto',s?'between-bets':'off-session'],notes:e.note}); bal+=e.net; continue; }
+    let s=activeSession(e.ts); if(!s) s=startSession(bal,e.ts);
+    const frac= bal>0? e.wager/bal : 1; const tags=['auto']; if(e.allIn||frac>=.99) tags.push('all-in'); if(frac*100>S.maxBetPctOfBankroll) tags.push('oversized');
+    const id=uid(); added.push(id);
+    DATA.bets.push({id,ts:new Date(e.ts).toISOString(),sessionId:s.id,game:e.game,command:e.cmd,wager:e.wager,net:e.net,roll:e.roll,tags,notes:''});
+    bal+=e.net;
+  }
+  FRESH=new Set(added); setTimeout(()=>{ FRESH=new Set(); },3000);
+  commit();
+  const last=plan.entries.filter(e=>e.kind==='bet').pop(); if(last){ flashBalance(last.net); if(source==='live') toast(`${last.roll!=null?`Rolled ${last.roll} · `:''}${money(last.net,true)} · balance ${money(getAgg().balance)}`); }
+  return plan;
+}
+
+/* ---------- userscript bridge ---------- */
+const BRIDGE={present:false,status:null,version:null,lastEvent:0};
+window.addEventListener('message',e=>{
+  if(e.source!==window) return; const d=e.data; if(!d||d.source!=='batgasm-capture') return;
+  BRIDGE.present=true; if(d.version) BRIDGE.version=d.version;
+  if(d.type==='status'){ BRIDGE.status=d.status||null; renderCapture(); }
+  if(d.type==='events' && Array.isArray(d.events)){
+    const seenIds=new Set(DATA.meta.evIds||[]); const fresh=d.events.filter(ev=>ev&&ev.id&&!seenIds.has(ev.id));
+    if(fresh.length){ DATA.meta.evIds=[...(DATA.meta.evIds||[]),...fresh.map(x=>x.id)].slice(-4000); BRIDGE.lastEvent=Date.now(); ingestEvents(fresh,{source:'live'}); }
+    window.postMessage({source:'batgasm-tracker',type:'ack',ids:d.events.map(x=>x&&x.id).filter(Boolean)},'*');
+    renderCapture();
+  }
+});
+function captureState(){
+  const st=BRIDGE.status, now=Date.now();
+  if(!BRIDGE.present) return {cls:'',text:'Auto-capture off',tip:'Install the userscript in Settings'};
+  if(!st || now-st.ts>100000) return {cls:'wait',text:'Open Twitch chat',tip:'Userscript is installed. Open twitch.tv/popout/batgasm/chat'};
+  if(!st.onChannel) return {cls:'wait',text:'Twitch open, not on Batgasm',tip:'Switch the Twitch tab to batgasm'};
+  return {cls:'ok pulse',text:'Capturing #batgasm',tip: st.lastMsg? `Last bot or bet message ${ago(now-st.lastMsg)}` : 'Waiting for the first !gamble'};
+}
+function renderCapture(){ const c=captureState(), p=$('#cap-pill'); p.className='pill '+c.cls; $('#cap-text').textContent=c.text; p.title=c.tip; const lv=$('#live-cap'); if(lv) lv.innerHTML=capBlock(); }
+window.postMessage({source:'batgasm-tracker',type:'hello',version:APP_VERSION},'*');
+
+/* ==================================================================
+   UI HELPERS
+   ================================================================== */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+let toastTimer=null;
+function toast(msg,action){ const el=$('#toast'); el.innerHTML=`<span>${esc(msg)}</span>`; if(action){ const b=document.createElement('button'); b.type='button'; b.textContent=action.label; b.onclick=()=>{ el.hidden=true; action.fn(); }; el.appendChild(b); } el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true, action?6000:3200); }
+function showTip(html,x,y){ const t=$('#tip'); t.innerHTML=html; t.hidden=false; const r=t.getBoundingClientRect(); let left=x+14, top=y-r.height-10; if(left+r.width>innerWidth-8) left=x-r.width-14; if(left<8) left=8; if(top<8) top=y+16; t.style.left=left+'px'; t.style.top=top+'px'; }
+function hideTip(){ $('#tip').hidden=true; }
+document.addEventListener('pointerover',e=>{ const el=e.target.closest('[data-tip]'); if(el) showTip(el.dataset.tip,e.clientX,e.clientY); });
+document.addEventListener('pointerout',e=>{ if(e.target.closest('[data-tip]')) hideTip(); });
+document.addEventListener('focusin',e=>{ const el=e.target.closest('[data-tip]'); if(el){ const r=el.getBoundingClientRect(); showTip(el.dataset.tip,r.left+r.width/2,r.top); } });
+document.addEventListener('focusout',e=>{ if(e.target.closest('[data-tip]')) hideTip(); });
+function measure(){ const qa=$('#qa'); document.documentElement.style.setProperty('--qa-h',(qa&&!qa.hidden?qa.offsetHeight:0)+'px'); }
+function niceTicks(min,max,n=4){ if(!isFinite(min)||!isFinite(max)){min=0;max=1;} if(min===max){min-=1;max+=1;} const step0=(max-min)/n, mag=10**Math.floor(Math.log10(step0)), e=step0/mag; const step=(e>=7.5?10:e>=3.5?5:e>=1.5?2:1)*mag; const lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step, t=[]; for(let v=lo;v<=hi+step/2;v+=step) t.push(+v.toFixed(8)); return {lo,hi,ticks:t}; }
+
+/* ==================================================================
+   CHARTS (inline SVG)
+   ================================================================== */
+let balRange='all';
+const CHART_RO = typeof ResizeObserver!=='undefined' ? new ResizeObserver(entries=>{ for(const en of entries){ const h=en.target; const w=Math.round(en.contentRect.width); if(h._redraw && w>0 && Math.abs(w-(h._w||0))>4){ h._w=w; h._redraw(); } } }) : {observe(){}};
+function drawBalanceChart(agg,hostId='bal-chart',range=balRange){
+  const host=document.getElementById(hostId); if(!host) return;
+  host._redraw=()=>drawBalanceChart(getAgg(),hostId,range); host._w=host.clientWidth; CHART_RO.observe(host);
+  let pts=agg.series.map((p,i)=>({...p,i}));
+  const sessRef=agg.currentSession||agg.lastSession;
+  if(range==='session' && sessRef){ const sid=sessRef.id; const first=pts.findIndex(p=>p.sid===sid); if(first>0) pts=pts.slice(first-1).filter((p,k)=>k===0||p.sid===sid); }
+  else if(range==='50') pts=pts.slice(-51);
+  if(pts.length<2){ host.innerHTML='<div class="empty">Your balance line appears after the first bet.</div>'; return; }
+  const W=Math.max(280,host.clientWidth), H=Math.round(clamp(W*.36,190,280)), pl=52, pr=10, pt=10, pb=22;
+  let lo=Math.min(...pts.map(p=>p.bal)), hi=Math.max(...pts.map(p=>p.bal));
+  const SL=agg.settings.stopLossPct/100, TP=agg.settings.takeProfitPct/100;
+  let slv=null,tpv=null; if(sessRef && sessRef.startBalance>0 && (range!=='all'||agg.currentSession)){ slv=sessRef.startBalance*(1-SL); tpv=sessRef.startBalance*(1+TP); lo=Math.min(lo,slv); hi=Math.max(hi,tpv); }
+  const nt=niceTicks(lo,hi,4);
+  const x=k=>pl+(W-pl-pr)*(k/(pts.length-1)), y=v=>pt+(H-pt-pb)*(1-(v-nt.lo)/(nt.hi-nt.lo||1));
+  const step=Math.max(1,Math.floor(pts.length/900));
+  let d=''; for(let k=0;k<pts.length;k+=step){ d+=(d?'L':'M')+x(k).toFixed(1)+','+y(pts[k].bal).toFixed(1); } const kl=pts.length-1; d+='L'+x(kl).toFixed(1)+','+y(pts[kl].bal).toFixed(1);
+  const area=d+`L${x(kl).toFixed(1)},${(H-pb).toFixed(1)}L${x(0).toFixed(1)},${(H-pb).toFixed(1)}Z`;
+  let grid='', marks='';
+  nt.ticks.forEach(v=>{ grid+=`<line class="gridline" x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}"/><text x="${pl-6}" y="${y(v)+3}" text-anchor="end">${compact(v)}</text>`; });
+  for(let k=1;k<pts.length;k++){ if(pts[k].sid && pts[k].sid!==pts[k-1].sid && !pts[k].adj) marks+=`<line x1="${x(k)}" x2="${x(k)}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="2 4" stroke-width="1"/>`; }
+  let bands='';
+  if(slv!=null){ bands+=`<rect x="${pl}" y="${y(slv)}" width="${W-pl-pr}" height="${Math.max(0,H-pb-y(slv))}" fill="var(--loss-soft)"/><line x1="${pl}" x2="${W-pr}" y1="${y(slv)}" y2="${y(slv)}" stroke="var(--loss)" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${W-pr}" y="${y(slv)-4}" text-anchor="end" fill="var(--loss)">stop-loss ${compact(slv)}</text>`;
+    bands+=`<rect x="${pl}" y="${pt}" width="${W-pl-pr}" height="${Math.max(0,y(tpv)-pt)}" fill="var(--win-soft)"/><line x1="${pl}" x2="${W-pr}" y1="${y(tpv)}" y2="${y(tpv)}" stroke="var(--win)" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${W-pr}" y="${y(tpv)+12}" text-anchor="end" fill="var(--win)">take-profit ${compact(tpv)}</text>`; }
+  const endP=pts[kl], gid='g'+hostId;
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Balance after each bet, ${pts.length} points, from ${fmt(pts[0].bal)} to ${fmt(endP.bal)}">
+    <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".35"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <g class="axis">${grid}</g>${bands}${marks}
+    <path d="${area}" fill="url(#${gid})"/><path d="${d}" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(kl)}" cy="${y(endP.bal)}" r="4" fill="var(--accent-2)" stroke="var(--surface)" stroke-width="2"/>
+    <g class="axis"><text x="${pl}" y="${H-6}">${pts[0].ts?when(pts[0].ts):'start'}</text><text x="${W-pr}" y="${H-6}" text-anchor="end">${endP.ts?when(endP.ts):''}</text></g>
+    <line class="guide" x1="0" x2="0" y1="${pt}" y2="${H-pb}" stroke="var(--fg)" stroke-opacity=".35" visibility="hidden"/>
+    <circle class="gdot" r="4" fill="var(--fg)" visibility="hidden"/>
+    <rect class="hit" x="${pl}" y="0" width="${W-pl-pr}" height="${H}" fill="transparent" style="cursor:crosshair;touch-action:pan-y"/>
+  </svg>`;
+  const svg=host.querySelector('svg'), hit=$('.hit',host), guide=$('.guide',host), dot=$('.gdot',host);
+  const move=e=>{ const r=svg.getBoundingClientRect(); const sx=(e.clientX-r.left)*(W/r.width); const k=clamp(Math.round((sx-pl)/((W-pl-pr)/Math.max(1,kl))),0,kl); const p=pts[k];
+    guide.setAttribute('x1',x(k)); guide.setAttribute('x2',x(k)); guide.setAttribute('visibility','visible'); dot.setAttribute('cx',x(k)); dot.setAttribute('cy',y(p.bal)); dot.setAttribute('visibility','visible');
+    showTip(`<b>${fmt(p.bal)}</b><br>${p.start?'Starting balance':`${esc(p.game)}${p.roll!=null?` · roll ${p.roll}`:''}${p.adj?' (balance change)':''} <span class="${cls(p.net)}">${money(p.net,true)}</span><br>${when(p.ts)}`}`,e.clientX,e.clientY); };
+  hit.addEventListener('pointermove',move); hit.addEventListener('pointerdown',move);
+  hit.addEventListener('pointerleave',()=>{ guide.setAttribute('visibility','hidden'); dot.setAttribute('visibility','hidden'); hideTip(); });
+}
+function histogram(sets,start,W){
+  W=Math.max(260,W||400); const H=170, pl=8, pr=8, pt=8, pb=24;
+  const allV=sets.flatMap(s=>s.vals); if(!allV.length) return '';
+  let lo=Math.min(...allV,start), hi=Math.max(...allV,start); if(lo===hi){lo-=1;hi+=1;}
+  const bins=28, bw=(hi-lo)/bins;
+  const counts=sets.map(s=>{ const c=new Array(bins).fill(0); s.vals.forEach(v=>{ c[Math.min(bins-1,Math.floor((v-lo)/bw))]++; }); return c; });
+  const maxC=Math.max(1,...counts.flat()); const cw=(W-pl-pr)/bins;
+  const x=v=>pl+(W-pl-pr)*(v-lo)/(hi-lo);
+  let bars=''; counts.forEach((c,si)=>{ const off=sets.length>1? si*cw/2 : 0, w=sets.length>1? cw/2-1 : cw-1.5;
+    c.forEach((n,i)=>{ if(!n) return; const h=(H-pt-pb)*n/maxC; const a=lo+i*bw; bars+=`<rect x="${(pl+i*cw+off).toFixed(1)}" y="${(H-pb-h).toFixed(1)}" width="${Math.max(1,w).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${sets[si].color}" data-tip="${esc(sets[si].label)}<br>${money(a)}–${money(a+bw)}<br>${n} sessions (${pct(n/sets[si].vals.length)})"/>`; }); });
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Final balance distribution">${bars}
+    <line x1="${x(start)}" x2="${x(start)}" y1="${pt}" y2="${H-pb}" stroke="var(--fg)" stroke-dasharray="3 3" stroke-width="1"/>
+    <g class="axis"><text x="${pl}" y="${H-6}">${compact(lo)}</text><text x="${x(start)}" y="${H-6}" text-anchor="middle">start ${compact(start)}</text><text x="${W-pr}" y="${H-6}" text-anchor="end">${compact(hi)}</text></g></svg>`;
+}
+function gauge(score){
+  const r=60, cx=75, cy=72, a=Math.PI*(1-clamp(score,0,100)/100);
+  const ex=cx+r*Math.cos(a), ey=cy-r*Math.sin(a);
+  const col= score>=60?'var(--loss)':score>=35?'var(--warn)':'var(--win)';
+  return `<svg class="gauge" viewBox="0 0 150 92" role="img" aria-label="Tilt score ${score} out of 100">
+    <path d="M15,72 A60,60 0 0 1 135,72" fill="none" stroke="var(--surface-2)" stroke-width="12" stroke-linecap="round"/>
+    ${score>0?`<path d="M15,72 A60,60 0 0 1 ${ex.toFixed(1)},${ey.toFixed(1)}" fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round"/>`:''}
+    <text x="75" y="68" text-anchor="middle" font-size="26" font-weight="600">${score}</text>
+    <text x="75" y="86" text-anchor="middle" font-size="10" style="fill:var(--muted)">${score>=60?'TILTED':score>=35?'WARMING UP':'CALM'}</text></svg>`;
+}
+
+/* ==================================================================
+   VIEWS
+   ================================================================== */
+const ROUTES=['live','stats','log','strategies','setup'];
+function route(){ const h=(location.hash||'').slice(1); return ROUTES.includes(h)?h:'live'; }
+let showAllRecs=false;
+function render(){
+  const agg=getAgg(), S=DATA.settings, r=route();
+  document.documentElement.dataset.ui= S.theme==='light'?'light':'dark';
+  $('#hdr-bal').textContent=fmt(agg.balance);
+  $('#bal-lbl').textContent='Balance · '+(S.currencyName||'points');
+  renderSessionPill(agg); renderCapture();
+  $('#demo-banner').hidden=!hasDemo();
+  $$('.tabs a').forEach(a=>{ if(a.dataset.route===r) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
+  $('#qa').hidden= r!=='log';
+  fillGameSelect($('#qa-game'),S.games,$('#qa-game').value||S.games[0]);
+  const v=$('#view');
+  if(r==='live'){ v.innerHTML=viewLive(agg); drawBalanceChart(agg,'live-chart','session'); }
+  else if(r==='stats'){ v.innerHTML=viewStats(agg); afterStats(agg); }
+  else if(r==='log'){ v.innerHTML=viewLog(agg); }
+  else if(r==='strategies'){ v.innerHTML=viewStrategies(agg); drawStrategyCharts(); }
+  else { v.innerHTML=viewSettings(agg); }
+  updateHint(); measure();
+}
+function renderSessionPill(agg){
+  const s=agg.currentSession, pill=$('#sess-pill');
+  pill.className='pill'+(s?' ok':'');
+  $('#sess-text').innerHTML= s? `Session ${dur((Date.now()-+new Date(s.start))/36e5)} · <span class="${cls(s.net)}">${money(s.net,true)}</span>` : 'No session';
+  $('#sess-btn').textContent= s? 'End session':'Start session';
+}
+function fillGameSelect(sel,games,val){ const html=games.map(g=>`<option ${g===val?'selected':''}>${esc(g)}</option>`).join(''); if(sel.innerHTML!==html) sel.innerHTML=html; if(games.includes(val)) sel.value=val; }
+function tile(k,v,d='',c='',big=false,tip=''){ return `<div class="tile${big?' big':''}"${tip?` data-tip="${esc(tip)}" tabindex="0"`:''}><span class="k">${k}</span><span class="v ${c}">${v}</span>${d?`<span class="d">${d}</span>`:''}</div>`; }
+function recCard(r){ return `<article class="rec ${r.sev}"><div class="t"><span aria-hidden="true">${SEV_ICON[r.sev]}</span><span>${esc(r.title)}</span></div><div class="data">${esc(r.data)}</div><div class="act"><b>Do:</b> ${esc(r.action)}</div></article>`; }
+function goalEta(agg,g){
+  const rem=g.target-agg.balance; if(rem<=0) return {done:true};
+  const sess=agg.sessions.filter(s=>s.n>0).slice(-5); const avg=mean(sess.map(s=>s.net));
+  if(!sess.length) return {text:'Log a few sessions to estimate an ETA.'};
+  if(avg<=0) return {text:`Not trending toward it: last ${sess.length} session${sess.length>1?'s':''} average ${money(avg,true)}.`,avg,n:sess.length};
+  const k=Math.ceil(rem/avg); return {text:`~${k} session${k>1?'s':''} at your recent pace (${money(avg,true)}/session, last ${sess.length}).`,sessions:k,avg,n:sess.length};
+}
+function getRecs(agg){
+  const tilt=tiltScore(agg,Date.now()); const g0=DATA.goals.find(g=>g.target>agg.balance); let ge=null;
+  if(g0){ const e=goalEta(agg,g0); if(e.sessions) ge={data:`${g0.name}: ${money(agg.balance)} / ${money(g0.target)} · ${e.n} sessions sampled`,action:`At this pace you reach it in ~${e.sessions} session${e.sessions>1?'s':''}.`}; }
+  return {tilt,recs:recommendations(agg,DATA,{tilt,goalEta:ge,odds:getOdds()})};
+}
+
+/* ---------- LIVE (glance) ---------- */
+function capBlock(){
+  const c=captureState();
+  if(c.cls.includes('ok')) return `<span class="pill ok pulse"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}</span>`;
+  return `<span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}.</span> <a class="small" href="#setup">How to set it up</a>`;
+}
+function viewLive(agg){
+  const S=DATA.settings, cs=agg.currentSession, ls=agg.lastSession, sref=cs||ls, od=getOdds();
+  const {tilt,recs}=getRecs(agg);
+  const board=chatBoard(DATA.chat.rolls,S.chatParser.username,sref?.start,od.avgMult);
+  const feed=[...DATA.bets].filter(b=>!isAdj(b)).slice(-10).reverse();
+  const sessPct= sref&&sref.startBalance>0? sref.net/sref.startBalance : 0;
+  const streak= agg.curType? `${agg.curType}${agg.curStreak}` : '—';
+  const meRow=board.myRank&&board.myRank>8? board.rich[board.myRank-1] : null;
+  const cells=od.cells.map((c,i)=>{ const t=c.w+c.l; const col= !t?'':c.w&&!c.l?'var(--win)':c.l&&!c.w?'var(--loss)':'var(--warn)'; return `<span style="${t?`background:${col};opacity:${clamp(.35+t/6,.35,1)}`:''}" data-tip="Roll ${i+1}<br>${t?`${c.w} win · ${c.l} loss`:'not seen yet'}"></span>`; }).join('');
+  return `<div class="grid">
+  <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
+  <div class="hero accent s3"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
+  <div class="hero s3"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
+  <div class="hero s3"><span class="k">Win rate ${cs?'this session':sref?'last session':''}</span><span class="v">${sref&&sref.n?pct(sref.winRate,0):'—'}</span><span class="d">all time ${pct(agg.winRate,1)} over ${fmt(agg.totalBets)} bets</span></div>
+  <div class="hero s3"><span class="k">Streak · tilt</span><span class="v ${agg.curType==='W'?'pos':agg.curType==='L'?'neg':''}">${streak} <span style="font-size:.5em;color:${tilt.score>=60?'var(--loss)':tilt.score>=35?'var(--warn)':'var(--muted)'}">tilt ${tilt.score}</span></span><span class="d">best W${agg.longW} · worst L${agg.longL}</span></div>
+
+  <section class="panel s8"><div class="panel-h"><h2>${cs?'This session':'Last session'}</h2><span class="muted small">${sref?when(sref.start):''}</span></div><div id="live-chart" class="chart"></div></section>
+  <section class="panel s4"><div class="panel-h"><h2>Latest bets</h2><a class="small" href="#log">All</a></div>
+    ${feed.length?`<div class="feed">${feed.map(b=>`<div class="fi${FRESH.has(b.id)?' fresh':''}"><span class="roll ${b.roll==null?'n':b.net>0?'w':'l'}">${b.roll!=null?b.roll:(b.net>0?'W':'L')}</span><div><div>${esc(b.game)} <span class="muted small">${money(b.wager)}</span></div><div class="m">${when(b.ts)}</div></div><div class="r"><b class="${cls(b.net)}">${money(b.net,true)}</b><div class="m">${money(b.balanceAfter)}</div></div></div>`).join('')}</div>`:'<div class="empty">Your !gamble results show up here by themselves once auto-capture is on.</div>'}
+  </section>
+
+  <section class="panel s4"><div class="panel-h"><h2>What the data says</h2>${recs.length>2?`<a class="small" href="#stats">More</a>`:''}</div><div class="recs" style="grid-template-columns:minmax(0,1fr)">${recs.slice(0,2).map(recCard).join('')}</div></section>
+  <section class="panel s4"><div class="panel-h"><h2>Gamble odds</h2><span class="badge ${sampleBadge(od.n).cls}">${fmt(od.n)} chat rolls</span></div>
+    ${od.n?`<dl class="kv"><dt>Chat win rate</dt><dd>${pct(od.winRate)}</dd>
+      <dt>Wins start at</dt><dd>${od.clean?`roll ${od.minWin}+`:od.minWin!=null?`unclear (win ${od.minWin}, loss ${od.maxLoss})`:'—'}</dd>
+      <dt>Win pays</dt><dd>×${od.avgMult.toFixed(2)} ${od.multN?`(${od.multN} paired)`:'(assumed)'}</dd>
+      <dt data-tip="Average return of a bet: win rate × payout − 1. Negative means you lose that share of every bet over time.">Edge per bet ⓘ</dt><dd class="${cls(od.ev)}">${pctS(od.ev)}</dd>
+      ${od.theoEv!=null?`<dt data-tip="If rolls are 1–100 and wins start at ${od.minWin}, the true win chance is ${pct(od.theoP,0)}.">If rolls are fair ⓘ</dt><dd class="${cls(od.theoEv)}">${pct(od.theoP,0)} win · ${pctS(od.theoEv)}</dd>`:''}</dl>
+      <div class="strip" aria-label="Rolls 1 to 100 seen in chat, green win, red loss">${cells}</div><div class="small muted">Rolls 1–100 seen in chat: green won, red lost.</div>`:'<div class="empty">Every !gamble result in chat feeds this, not just yours.</div>'}
+  </section>
+  <section class="panel s4"><div class="panel-h"><h2>Chat rich list</h2><span class="muted small">${board.players} seen${board.myRank?` · you’re #${board.myRank}`:''}</span></div>
+    ${board.rich.length?`<div class="rich">${board.rich.slice(0,8).map((p,i)=>`<div class="${p.user.toLowerCase()===S.chatParser.username.toLowerCase()?'me':''}"><span class="rk">#${i+1}</span><span class="nm">${esc(p.user)}</span><span class="num">${money(p.total)}</span></div>`).join('')}${meRow?`<div class="me"><span class="rk">#${board.myRank}</span><span class="nm">${esc(meRow.user)}</span><span class="num">${money(meRow.total)}</span></div>`:''}</div>
+      <div class="small muted">Balances from the bot’s "now has" replies. Only people who gambled while you watched.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
+  </section></div>`;
+}
+
+/* ---------- STATS (deep dashboard) ---------- */
+function viewStats(agg){
+  const S=DATA.settings, cur=esc(S.currencyName||'points');
+  const {tilt,recs}=getRecs(agg);
+  const shown= showAllRecs? recs : recs.slice(0,3);
+  const cs=agg.currentSession, ls=agg.lastSession, sref=cs||ls;
+  const streak= agg.curType? `${agg.curType}${agg.curStreak}` : '—';
+  const empty=!agg.totalBets;
+  const pas=agg.passivePerHour;
+  return `<div class="grid">
+  <section class="panel s12" aria-labelledby="h-recs">
+    <div class="panel-h"><h2 id="h-recs">Recommendations</h2><span class="muted small">Rule-based · updates after every bet · ${recs.length} triggered</span></div>
+    <div class="recs">${shown.map(recCard).join('')}</div>
+    ${recs.length>3?`<div><button class="btn sm ghost" type="button" data-act="toggle-recs">${showAllRecs?'Show top 3':`Show all ${recs.length}`}</button></div>`:''}
+  </section>
+  <section class="panel s12" aria-labelledby="h-stats">
+    <div class="panel-h"><h2 id="h-stats">Stats</h2><span class="muted small">${fmt(agg.totalBets)} bets · ${agg.sessions.length} sessions</span></div>
+    ${empty?'<div class="empty">Stats appear after your first bet.</div>':''}
+    <div class="tiles">
+      ${tile('Balance',money(agg.balance),cur,'',true,fmt(agg.balance))}
+      ${tile('Net P/L · all time',money(agg.net,true),`ROI ${pctS(agg.roi)}`,cls(agg.net),true,'Net of all bets, excluding balance changes between bets. ROI = net ÷ total wagered.')}
+      ${tile(cs?'Net P/L · this session':'Net P/L · last session',sref?money(sref.net,true):'—',sref?`${sref.n} bets · ROI ${pctS(sref.roi)}`:'no sessions yet',sref?cls(sref.net):'',true)}
+      ${tile('Win rate',pct(agg.winRate),`${fmt(agg.wins)}W / ${fmt(agg.losses)}L`)}
+      ${tile('Total wagered',money(agg.wagered),`${fmt(agg.totalBets)} bets`)}
+      ${tile('Average bet',money(agg.avgBet),`recent 50: ${money(agg.avgBetRecent)}`)}
+      ${tile('Avg win multiplier',agg.avgWinMult?'×'+agg.avgWinMult.toFixed(2):'—','on winning bets')}
+      ${tile('Biggest win',agg.bigWin&&agg.bigWin.net>0?money(agg.bigWin.net,true):'—',agg.bigWin&&agg.bigWin.net>0?esc(agg.bigWin.game)+' · '+when(agg.bigWin.ts):'','pos')}
+      ${tile('Biggest loss',agg.bigLoss&&agg.bigLoss.net<0?money(agg.bigLoss.net,true):'—',agg.bigLoss&&agg.bigLoss.net<0?esc(agg.bigLoss.game)+' · '+when(agg.bigLoss.ts):'','neg')}
+      ${tile('Current streak',streak,'',agg.curType==='W'?'pos':agg.curType==='L'?'neg':'')}
+      ${tile('Longest streaks',`<span class="pos">W${agg.longW}</span> / <span class="neg">L${agg.longL}</span>`,'')}
+      ${tile('Passive earnings',pas!=null?money(pas,true)+'/hr':'—',pas!=null?`seen between bets over ${dur(agg.sessHours)}`:'measured automatically from chat','',false,'Balance increases between your bets during sessions: watch-time points, rewards and so on.')}
+    </div>
+  </section>
+  <section class="panel s8" aria-labelledby="h-bal">
+    <div class="panel-h"><h2 id="h-bal">Balance over time</h2>
+      <div class="seg" role="group" aria-label="Range">${[['all','All time'],['session',cs?'This session':'Last session'],['50','Last 50']].map(([k,l])=>`<button type="button" data-act="bal-range" data-v="${k}" aria-pressed="${balRange===k}">${l}</button>`).join('')}</div></div>
+    <div id="bal-chart" class="chart"></div>
+    <div class="legend"><span><i style="background:var(--accent-2)"></i>balance after each entry</span><span><i style="background:var(--muted)"></i>session start (dashed)</span><span><i style="background:var(--loss)"></i>stop-loss</span><span><i style="background:var(--win)"></i>take-profit</span></div>
+  </section>
+  <section class="panel s4" aria-labelledby="h-tilt">
+    <div class="panel-h"><h2 id="h-tilt">Tilt meter</h2><span class="muted small">${tilt.n} recent bets</span></div>
+    <div class="gauge-wrap">${gauge(tilt.score)}<div class="parts">${tilt.parts.map(p=>`<div><span class="muted">${p.k}</span><span class="num">${esc(p.v)}</span></div>`).join('')||'<span class="muted">No bets yet.</span>'}</div></div>
+    <p class="muted small" style="margin:0">Weighted from loss streak (35), bet size vs. your usual (30), pace (20) and time since a 10-minute break (15).</p>
+  </section>
+  <section class="panel s4" aria-labelledby="h-sess">${sessionCard(sref,!!cs)}</section>
+  <section class="panel s4" aria-labelledby="h-risk">
+    <div class="panel-h"><h2 id="h-risk">Risk</h2></div>
+    <dl class="kv">
+      <dt>Max drawdown</dt><dd class="neg">${money(-agg.maxDD)} (${pct(agg.maxDDPct)})</dd>
+      <dt>From peak now</dt><dd class="${agg.curDD?'neg':''}">${money(-agg.curDD)} (${pct(agg.curDDPct)})</dd>
+      <dt>Peak balance</dt><dd>${money(agg.peak)}</dd>
+      <dt data-tip="Standard deviation of each bet's return (net ÷ wager). 1.0 means a typical bet swings by its full size.">Volatility ⓘ</dt><dd>${agg.volatility.toFixed(2)} per bet</dd>
+      <dt data-tip="Share of 1,000 simulated runs of 200 bets at your recent average bet where your balance drops below one average bet.">Risk of ruin ⓘ</dt><dd id="ror">${agg.totalBets?'…':'—'}</dd>
+    </dl>
+    <p class="muted small" style="margin:0" id="ror-note">${agg.totalBets?'':'Needs logged bets.'}</p>
+  </section>
+  <section class="panel s4" aria-labelledby="h-goals">
+    <div class="panel-h"><h2 id="h-goals">Goals</h2></div>
+    ${DATA.goals.length? DATA.goals.map(g=>{ const e=goalEta(agg,g); const p=clamp(safeDiv(agg.balance,g.target),0,1); return `<div class="goal"><div class="gt"><b>${esc(g.name)}${g.demo?' <span class="badge small-s">demo</span>':''}</b><span class="num small">${money(agg.balance)} / ${money(g.target)}</span></div>
+      <div class="prog" role="progressbar" aria-valuenow="${Math.round(p*100)}" aria-valuemin="0" aria-valuemax="100" aria-label="${esc(g.name)} progress"><div style="width:${(p*100).toFixed(1)}%"></div></div>
+      <div class="small muted">${e.done?'<span class="pos">Reached ✓</span>':esc(e.text)}</div>
+      ${e.done?'':`<div class="small">P(hit before stop-loss): <b class="num" data-goalp="${esc(g.id)}">…</b></div>`}
+      <div><button class="btn sm ghost" type="button" data-act="del-goal" data-id="${esc(g.id)}">Remove</button></div></div>`; }).join('') : '<div class="empty">No goals yet. Try "Reach 250M" or "Pass the #1 on the rich list".</div>'}
+    <form class="row" data-form="goal"><label class="f grow">Goal<input id="goal-name" type="text" placeholder="Reach 250M" required></label><label class="f" style="flex:1 1 100px">Target<input id="goal-target" type="text" inputmode="numeric" placeholder="250m" required></label><button class="btn primary" type="submit">Add</button></form>
+  </section>
+  <section class="panel s12" aria-labelledby="h-games">
+    <div class="panel-h"><h2 id="h-games">By game</h2><span class="muted small">Sample badge: under 30 small · 30–100 moderate · over 100 solid</span></div>
+    ${agg.games.length?`<div class="games">${agg.games.map(g=>{ const b=sampleBadge(g.n); return `<div class="gcard"><div class="gh"><b>${esc(g.game)}</b><span class="badge ${b.cls}">${b.label}</span></div>
+      <dl class="kv"><dt>Bets</dt><dd>${fmt(g.n)}</dd><dt>Win rate</dt><dd>${pct(g.winRate)}</dd><dt>ROI</dt><dd class="${cls(g.roi)}">${pctS(g.roi)}</dd><dt>Net</dt><dd class="${cls(g.net)}">${money(g.net,true)}</dd><dt>Avg win ×</dt><dd>${g.avgWinMult?'×'+g.avgWinMult.toFixed(2):'—'}</dd><dt>Return / bet</dt><dd>×${g.avgMult.toFixed(2)}</dd></dl></div>`; }).join('')}</div>`:'<div class="empty">Per-game stats appear after your first bet.</div>'}
+  </section>
+  <section class="panel s6" aria-labelledby="h-size">
+    <div class="panel-h"><h2 id="h-size">Bet size vs. results</h2><span class="muted small">wager as % of balance at the time</span></div>
+    ${agg.totalBets? agg.buckets.map(b=>`<div class="bucket"><span class="bl">${b.label}</span><div class="bs"><span><b>${fmt(b.n)}</b> bets</span><span>win <b>${b.n?pct(b.wins/b.n):'—'}</b></span><span>ROI <b class="${cls(b.net)}">${b.n?pctS(safeDiv(b.net,b.wagered)):'—'}</b></span><span>net <b class="${cls(b.net)}">${money(b.net,true)}</b></span></div></div>`).join('') : '<div class="empty">Log bets to compare small and big bets.</div>'}
+  </section>
+  <section class="panel s6" aria-labelledby="h-time">
+    <div class="panel-h"><h2 id="h-time">Time patterns</h2><span class="muted small">net by local hour and weekday</span></div>
+    ${timePanel(agg)}
+  </section></div>`;
+}
+function sessionCard(s,live){
+  if(!s) return `<div class="panel-h"><h2 id="h-sess">Session</h2></div><div class="empty">No sessions yet. One starts automatically with your first bet.</div>`;
+  const v=[]; if(s.afterStop) v.push(`${s.afterStop} bet${s.afterStop>1?'s':''} after stop-loss`); if(s.chase) v.push(`${s.chase} chase bet${s.chase>1?'s':''}`); if(s.oversized) v.push(`${s.oversized} oversized`); if(s.allIn) v.push(`${s.allIn} all-in`);
+  return `<div class="panel-h"><h2 id="h-sess">${live?'This session':'Last session'}</h2><span class="muted small">${when(s.start)}</span></div>
+    <dl class="kv"><dt>Duration</dt><dd>${dur(s.durH)}</dd><dt>Bets</dt><dd>${s.n} · ${s.betsPerHour.toFixed(0)}/hr</dd><dt>Net</dt><dd class="${cls(s.net)}">${money(s.net,true)}</dd><dt>ROI</dt><dd class="${cls(s.roi)}">${pctS(s.roi)}</dd>
+    <dt>Best game</dt><dd>${s.best?`${esc(s.best.game)} <span class="${cls(s.best.net)}">${money(s.best.net,true)}</span>`:'—'}</dd><dt>Worst game</dt><dd>${s.worst?`${esc(s.worst.game)} <span class="${cls(s.worst.net)}">${money(s.worst.net,true)}</span>`:'—'}</dd></dl>
+    <div class="small">${v.length?`<span class="warnc">Rule breaks:</span> ${v.join(' · ')}`:'<span class="pos">Within limits ✓</span>'}</div>`;
+}
+function timePanel(agg){
+  if(!agg.totalBets) return '<div class="empty">Log bets to see your best and worst hours.</div>';
+  const maxH=Math.max(1,...agg.hours.map(h=>Math.abs(h.net)));
+  const heat=agg.hours.map((h,i)=>{ const a=Math.round(Math.abs(h.net)/maxH*70); const col= h.net>=0?'var(--win)':'var(--loss)'; return `<div class="c" tabindex="0" style="${h.n?`background:color-mix(in srgb, ${col} ${a+12}%, var(--surface-2))`:''}" data-tip="${hh(i)}–${hh(i+1)}<br>${h.n} bets · net ${money(h.net,true)}<br>ROI ${h.n?pctS(safeDiv(h.net,h.wagered)):'—'}" aria-label="${hh(i)}: ${h.n} bets, net ${money(h.net,true)}">${i}</div>`; }).join('');
+  const maxD=Math.max(1,...agg.days.map(d=>Math.abs(d.net)));
+  const days=[1,2,3,4,5,6,0].map(i=>{ const d=agg.days[i]; const w=Math.abs(d.net)/maxD*50; return `<div class="brow"><span class="lab">${DAYS[i]}</span><div class="btrack" data-tip="${DAYS[i]} · ${d.n} bets<br>net ${money(d.net,true)}"><span class="mid"></span><span class="bar" style="${d.net>=0?`left:50%;background:var(--win)`:`right:50%;background:var(--loss)`};width:${w.toFixed(1)}%"></span></div><span class="val ${cls(d.net)}">${d.n?money(d.net,true):'—'}</span></div>`; }).join('');
+  const ln=lateNight(agg);
+  const flag= ln.n>=agg.T.badHourMinBets && ln.otherN>0 && (ln.otherRoi-ln.roi)*100>=agg.T.badHourGap
+    ? `<div class="rec caution"><div class="t">🟡 Late nights cost you</div><div class="data">00:00–05:00 ROI ${pctS(ln.roi)} (${ln.n} bets) vs ${pctS(ln.otherRoi)} other hours</div></div>`
+    : `<p class="muted small" style="margin:0">Late night (00:00–05:00): ${ln.n} bets${ln.n?`, ROI ${pctS(ln.roi)} vs ${pctS(ln.otherRoi)} other hours`:''}${ln.n<agg.T.badHourMinBets?' · not enough bets to judge yet':' · no significant gap'}.</p>`;
+  return `<div class="small muted">Hour of day (hover or tap a cell)</div><div class="heat">${heat}</div><div style="display:flex;flex-direction:column;gap:5px">${days}</div>${flag}`;
+}
+function afterStats(agg){
+  drawBalanceChart(agg,'bal-chart',balRange);
+  if(!agg.totalBets) return;
+  const ver=VER;
+  setTimeout(()=>{
+    if(ver!==VER) return;
+    const S=DATA.settings, out=outcomesFor(agg,'__all',S.gamePresets,getOdds());
+    const bet=agg.avgBetRecent||agg.avgBet;
+    const key='ror'+ver;
+    const ror= MC_CACHE[key] ?? (MC_CACHE[key]=riskOfRuin({start:agg.balance,bet,outcomes:out.list}));
+    const el=$('#ror'); if(el){ el.textContent= ror==null?'—':pct(ror,0); el.className= ror>.3?'neg':ror>.1?'warnc':'pos'; }
+    const note=$('#ror-note'); if(note) note.textContent=`Flat ${money(bet)} bets from ${money(agg.balance)}, 200 bets × 1,000 runs, using ${out.source==='chat'?`${fmt(out.n)} chat rolls`:out.source==='data'?`your ${fmt(out.n)} logged results`:'preset odds'}.`;
+    DATA.goals.forEach(g=>{ const span=document.querySelector(`[data-goalp="${CSS.escape(g.id)}"]`); if(!span) return; const k='goal'+ver+g.id;
+      const p= MC_CACHE[k] ?? (MC_CACHE[k]=goalProbability({start:agg.balance,target:g.target,floor:agg.balance*(1-S.stopLossPct/100),bet,outcomes:out.list}));
+      span.textContent= p==null?'—':pct(p,0); });
+  },30);
+}
+
+/* ---------- Bet log ---------- */
+let logPage=1, logFilter='', editing=null, confirmDel=null, parsed=null, pasteText='';
+function viewLog(agg){
+  const S=DATA.settings;
+  const list=[...DATA.bets].reverse().filter(b=>!logFilter||b.game===logFilter);
+  const shown=list.slice(0,logPage*50);
+  const mine=parsed? parsed.rows.filter(r=>r.status==='mine') : [];
+  const chatN=parsed? parsed.rows.filter(r=>r.status==='chat').length : 0;
+  return `<div class="grid">
+  <section class="panel s5" aria-labelledby="h-sync">
+    <div class="panel-h"><h2 id="h-sync">Sync with !points</h2></div>
+    <p class="muted small" style="margin:0">With auto-capture on you rarely need this, since every bot reply carries your balance. Otherwise type your balance from <span class="mono">!points</span> and an Adjustment entry makes the numbers match.</p>
+    <form class="row" data-form="sync"><label class="f grow">Actual balance<input id="sync-bal" type="text" inputmode="numeric" placeholder="${fmt(agg.balance)}"></label><button class="btn primary" type="submit">Sync</button></form>
+    <div class="panel-h" style="margin-top:6px"><h2>Sessions</h2><span class="muted small">${agg.sessions.length} total</span></div>
+    <div>${agg.sessions.length? [...agg.sessions].reverse().slice(0,12).map(s=>`<div class="sessrow"><span>${when(s.start)}${s.end?'':' <span class="badge solid-s">live</span>'}${s.demo?' <span class="badge small-s">demo</span>':''}<br><span class="muted small">${s.n} bets · ${dur(s.durH)}${s.disciplined?' · disciplined ✓':s.end&&s.violations?` · ${s.violations} rule break${s.violations>1?'s':''}`:''}</span></span><span class="num ${cls(s.net)}">${money(s.net,true)}</span></div>`).join('') : '<div class="empty">Sessions start automatically with your first bet.</div>'}</div>
+  </section>
+  <section class="panel s7" aria-labelledby="h-chat">
+    <div class="panel-h"><h2 id="h-chat">Paste chat</h2><span class="muted small">for anything auto-capture missed</span></div>
+    <p class="muted small" style="margin:0">Paste lines like <span class="mono">Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins</span>. Your own <span class="mono">!gamble</span> lines help pair the exact wager. Duplicates are skipped.</p>
+    <textarea id="chat-paste" rows="5" placeholder="SireBlade: !gamble 10000000&#10;Streamlabs: Rolled 23, @SireBlade lost 10000000 Bat-Coins and now has 150009600 Bat-Coins">${esc(pasteText)}</textarea>
+    <div class="row"><button class="btn" type="button" data-act="parse">Preview</button>${parsed&&(mine.length||chatN)?`<button class="btn primary" type="button" data-act="import-parsed">Import ${mine.length} of your bets${chatN?` + ${chatN} chat rolls`:''}</button>`:''}${parsed?`<button class="btn ghost" type="button" data-act="clear-parsed">Clear</button>`:''}</div>
+    ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
+  </section>
+  <section class="panel s12" aria-labelledby="h-bets">
+    <div class="panel-h"><h2 id="h-bets">All entries</h2>
+      <div class="row"><label class="f">Filter<select id="log-filter"><option value="">All games</option>${[...S.games,ADJ].map(g=>`<option ${g===logFilter?'selected':''}>${esc(g)}</option>`).join('')}</select></label></div></div>
+    ${list.length?'':'<div class="empty">No bets yet. Auto-capture fills this in, or use the bar at the bottom.</div>'}
+    <div class="blist">${shown.map(b=>betRow(b,agg)).join('')}</div>
+    ${list.length>shown.length?`<button class="btn" type="button" data-act="more">Show 50 more (${fmt(list.length-shown.length)} left)</button>`:''}
+  </section></div>`;
+}
+function betRow(b,agg){
+  if(editing===b.id) return editRow(b);
+  const f=agg.flags[b.id]||{}; const tags=new Set(b.tags||[]); if(f.chase) tags.add('chase'); if(f.afterStop) tags.add('after stop-loss');
+  const bad=['chase','tilt','all-in','oversized','after stop-loss'];
+  return `<div class="bet"><div><div class="g">${esc(b.game)}${b.roll!=null?` <span class="muted small">roll ${b.roll}</span>`:''}${b.demo?' <span class="badge small-s">demo</span>':''}</div><div class="ts">${when(b.ts)}${b.command?` · <span class="mono">${esc(b.command)}</span>`:''}</div>
+      ${tags.size||b.notes?`<div class="tags">${[...tags].map(t=>`<span class="badge tag ${bad.includes(t)?'bad':''}">${esc(t)}</span>`).join('')}${b.notes?`<span class="small muted">${esc(b.notes)}</span>`:''}</div>`:''}</div>
+    <div class="amt c3"><span class="muted small">${isAdj(b)?'change':'wager'}</span><br>${isAdj(b)?'—':money(b.wager)}</div>
+    <div class="amt"><span class="${cls(b.net)}">${money(b.net,true)}</span><br><span class="muted small">→ ${money(b.balanceAfter)}</span></div>
+    <div class="acts"><button class="btn sm ghost" type="button" data-act="edit" data-id="${esc(b.id)}">Edit</button><button class="btn sm danger ${confirmDel===b.id?'armed':''}" type="button" data-act="del" data-id="${esc(b.id)}">${confirmDel===b.id?'Confirm':'Delete'}</button></div></div>`;
+}
+function toLocalInput(ts){ const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function editRow(b){
+  const S=DATA.settings; const games=[...S.games]; if(!games.includes(b.game)) games.push(b.game); if(!games.includes(ADJ)) games.push(ADJ);
+  return `<form class="editbox" data-form="edit" data-id="${esc(b.id)}">
+    <div class="set-grid">
+      <label class="f">Game<select id="e-game">${games.map(g=>`<option ${g===b.game?'selected':''}>${esc(g)}</option>`).join('')}</select></label>
+      <label class="f">Wager<input id="e-wager" type="text" inputmode="numeric" value="${b.wager}"></label>
+      <label class="f">Net (payout − wager)<input id="e-net" type="text" inputmode="numeric" value="${b.net}"></label>
+      <label class="f">Time<input id="e-ts" type="datetime-local" value="${toLocalInput(b.ts)}"></label>
+      <label class="f">Tags (comma separated)<input id="e-tags" type="text" value="${esc((b.tags||[]).join(', '))}"></label>
+      <label class="f">Notes<input id="e-notes" type="text" value="${esc(b.notes||'')}"></label>
+    </div>
+    <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button></div></form>`;
+}
+
+/* ---------- Strategies ---------- */
+const STRATS=[
+ {key:'flat',name:'Flat betting',how:'Bet the same amount every time, about 1–2% of your bankroll. The sim uses 2% of the starting balance.',best:'Grinding long sessions with the smallest swings.',risks:'Slow. With a house edge you still drift down, just gently.'},
+ {key:'kelly',name:'Fractional Kelly',how:'Bet a share of your current bankroll sized by your edge: f = (p·b − q) ÷ b. The sim uses half-Kelly.',best:'Only a game that shows a real positive edge over plenty of rolls.',risks:'With no edge Kelly says bet nothing, and small samples fake an edge easily.'},
+ {key:'martingale',name:'Martingale',how:'Double the bet after every loss and go back to base after a win (base 1%).',best:'Nothing long term. It wins small often and loses huge rarely.',risks:'A normal losing streak outgrows your bankroll fast. See the table.'},
+ {key:'paroli',name:'Paroli (reverse Martingale)',how:'Double after a win, up to 3 steps (1, 2, 4 units), then reset. Reset after any loss.',best:'Riding short hot runs while risking only base bets.',risks:'Same expected value as flat betting. Most runs end on the first loss.'},
+ {key:'p1326',name:'1-3-2-6',how:'Bet 1, 3, 2, 6 units on consecutive wins, then reset. Any loss resets to 1 unit (1% each).',best:'A structured press with a capped downside per cycle.',risks:'Finishing all four steps is rare. Expected value stays the same.'},
+ {key:'ladder',name:'Stop-loss / take-profit',how:'Flat 2% bets, but the session ends at your stop-loss or take-profit from Settings.',best:'Protecting a stream’s worth of coins from one bad night.',risks:'Limits do not change the odds. They cap how far a session can swing.'},
+ {key:'tiers',name:'Bankroll tiers',how:'Split the balance into 30% "play" and 70% "vault". Bet 5% of the play pot and stop when it is gone.',best:'Keeping a floor you never touch, for goals and rewards.',risks:'You can still lose the whole play pot each session.'},
+ {key:'goal',name:'Goal-targeted play',how:'Bet exactly what is needed to reach the goal in one win, and repeat until you hit it or bust.',best:'When a goal is close and you only care about hitting it.',risks:'High chance of busting. Compare it with flat betting below.'},
+ {key:'best',name:'Game selection',how:'Flat 2% bets on whichever game shows the best ROI in your own data.',best:'Avoiding the games that cost you the most.',risks:'Small samples mislead. A "best" game under 30 bets is mostly luck.'},
+ {key:'passive',name:'Sit out and farm',how:'Do not gamble. Just watch and collect passive points for the same time a session would take.',best:'Steady growth with zero variance. Also covers bonus events and giveaways.',risks:'Slower than a lucky night. Never busts.'}
+];
+let simGame='__all', simStart=null, simBets=100, simResults={}, cmpA='flat', cmpB='martingale', cmpRes=null;
+function simContext(agg){
+  const S=DATA.settings, od=getOdds(); const start= simStart ?? (agg.balance>0?agg.balance:150e6);
+  const out=outcomesFor(agg,simGame,S.gamePresets,od); const k=kellyFrom(out.source!=='preset'?out.list:[]);
+  const solid=agg.games.filter(g=>g.n>=10).sort((a,b)=>b.roi-a.roi); const best=solid[0];
+  const bestOut= best? outcomesFor(agg,best.game,S.gamePresets,od) : out;
+  const goal=(DATA.goals.find(g=>g.target>start)||{}).target||Math.round(start*1.5);
+  const winsL=out.list.filter(m=>m>1); const avgMult=mean(winsL)||2;
+  const real=agg.sessions.filter(s=>s.n>0&&s.durH>0); const bph= real.length? mean(real.map(s=>s.betsPerHour)) : S.betsPerHour;
+  const pph= agg.passivePerHour!=null? agg.passivePerHour : S.passivePerHour;
+  return {start,out,kellyF:(out.n>=30?k.f:0),k,best,bestOut,goal,avgMult,bph,pph};
+}
+function runSim(key,agg,runs=1000){
+  const S=DATA.settings, c=simContext(agg);
+  return simulate({key,start:c.start,nBets:simBets,runs,outcomes:key==='best'?c.bestOut.list:c.out.list,
+    o:{kellyF:c.kellyF,avgMult:c.avgMult,goal:c.goal,stopLossPct:S.stopLossPct,takeProfitPct:S.takeProfitPct,passivePerHour:c.pph,betsPerHour:c.bph}});
+}
+function statRow(r){ return `<div class="statrow"><div><span>Median</span><b class="${cls(r.median-r.start)}">${money(r.median)}</b></div><div><span>P(profit)</span><b>${pct(r.pProfit,0)}</b></div><div><span>P(bust)</span><b class="${r.pBust>.2?'neg':''}">${pct(r.pBust,0)}</b></div><div><span>5th pct</span><b>${money(r.p5)}</b></div><div><span>95th pct</span><b>${money(r.p95)}</b></div></div>`; }
+function viewStrategies(agg){
+  const S=DATA.settings, c=simContext(agg);
+  const gameOpts=[['__all','All results'],...S.games.map(g=>[g,g])];
+  const q=1-(c.out.list.filter(m=>m>1).length/c.out.list.length||0);
+  const base1=Math.max(1,Math.round(c.start*.01));
+  const mRows=[]; let cum=0; for(let n=1;n<=10;n++){ const bet=base1*2**(n-1); cum+=bet; mRows.push(`<tr><td>${n}</td><td>${money(bet)}</td><td>${money(cum)}</td><td class="${cum>c.start?'neg':''}">${cum>c.start?'bust':'ok'}</td><td>${pct(q**n,n>6?2:1)}</td></tr>`); }
+  const kRows=agg.games.map(g=>{ const k=kellyFrom(g.mults); const ok=g.n>=30&&k.f>0; return `<tr><td>${esc(g.game)}</td><td>${g.n}</td><td class="${cls(k.edge)}">${pctS(k.edge)}</td><td>${ok?pct(k.f/2):(g.n<30?'small sample':'0 (no edge)')}</td></tr>`; }).join('');
+  const ranked=[...agg.games].sort((a,b)=>b.roi-a.roi);
+  const realS=agg.sessions.filter(s=>s.n>0&&s.durH>0);
+  const evBet= agg.totalBets? agg.net/agg.totalBets : 0, evHr=evBet*c.bph;
+  const od=getOdds(); const chatEdge= od.n>=50 && od.ev!=null ? od.ev : null;
+  const extra={
+    kelly:`<div class="tbl-wrap"><table class="mini"><thead><tr><th>Game</th><th>Bets</th><th>Edge</th><th>Half-Kelly</th></tr></thead><tbody>${kRows||'<tr><td colspan="4">No bets yet</td></tr>'}${chatEdge!=null?`<tr><td>Gamble (chat)</td><td>${fmt(od.n)}</td><td class="${cls(chatEdge)}">${pctS(chatEdge)}</td><td>${chatEdge>0?'see sim':'0 (no edge)'}</td></tr>`:''}</tbody></table></div>${(chatEdge!=null&&chatEdge>0)||agg.games.some(g=>g.n>=30&&kellyFrom(g.mults).f>0)?'':'<p class="small muted" style="margin:0">No edge detected, Kelly = 0. The honest move is to bet small or not at all.</p>'}`,
+    martingale:`<div class="tbl-wrap"><table class="mini"><thead><tr><th>Losses in a row</th><th>Next bet</th><th>Total risked</th><th>vs ${compact(c.start)}</th><th>P(streak)</th></tr></thead><tbody>${mRows.join('')}</tbody></table></div><p class="small muted" style="margin:0">P(streak) is the chance a run opens with that many losses at a ${pct(q)} loss rate. Over 100 bets, long streaks become likely.</p>`,
+    best:`<p class="small" style="margin:0">${ranked.length?ranked.slice(0,4).map(g=>`${esc(g.game)} <span class="${cls(g.roi)} num">${pctS(g.roi)}</span> <span class="badge ${sampleBadge(g.n).cls}">${g.n}</span>`).join(' · '):'Log bets to rank games.'}</p>`,
+    passive:`<p class="small" style="margin:0">Gambling: <b class="num ${cls(evHr)}">${money(evHr,true)}</b>/hr so far (${money(evBet,true)} per bet × ${c.bph.toFixed(0)} bets/hr${realS.length?' from your sessions':''}). Passive: <b class="num pos">${money(c.pph,true)}</b>/hr ${agg.passivePerHour!=null?'(measured from chat)':'(set in Settings)'}. ${chatEdge!=null?`Long run, gambling is worth ${pctS(chatEdge)} of whatever you bet.`:''}</p>`,
+    goal:`<p class="small muted" style="margin:0">Goal used: ${money(c.goal)} ${esc(S.currencyName)}${DATA.goals.find(g=>g.target>c.start)?' (your next goal)':' (start × 1.5, add a goal to change it)'}.</p>`
+  };
+  const strCard=s=>{ const r=simResults[s.key]; return `<article class="strat"><h3>${esc(s.name)}</h3><dl><div><dt>How it works</dt><dd>${esc(s.how)}</dd></div><div><dt>Best for</dt><dd>${esc(s.best)}</dd></div><div><dt>Risks</dt><dd>${esc(s.risks)}</dd></div></dl>${extra[s.key]||''}
+    <div><button class="btn sm primary" type="button" data-act="sim" data-k="${s.key}">Simulate it</button></div>${r?`<div class="simres">${statRow(r)}<div class="chart" data-hist="${s.key}" style="min-height:0"></div></div>`:''}</article>`; };
+  return `<div style="display:flex;flex-direction:column;gap:14px">
+    <div class="callout"><b>The honest part:</b> !gamble pays a fixed multiple on a fixed roll range, so no betting system changes your expected value. Systems only reshape the swings: how often you win a little, how often you lose a lot, and how likely you are to hit a goal before going broke. The sims sample real results: everyone's rolls in chat when there are 50+, otherwise your own bets.</div>
+    <section class="panel"><div class="panel-h"><h2>Simulation inputs</h2><span class="muted small">${c.out.source==='chat'?`${fmt(c.out.n)} chat rolls`:c.out.source==='data'?`${fmt(c.out.n)} of your results`:`preset odds: ×${c.out.preset.mult} at ${pct(c.out.preset.p,0)} (${c.out.n} logged, need 10)`}</span></div>
+      <div class="row">
+        <label class="f grow">Outcomes from<select id="sim-game">${gameOpts.map(([v,l])=>`<option value="${esc(v)}" ${v===simGame?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+        <label class="f grow">Starting balance<input id="sim-start" type="text" inputmode="numeric" value="${c.start}"></label>
+        <label class="f grow">Bets per session<input id="sim-bets" type="number" min="10" max="2000" value="${simBets}"></label>
+      </div></section>
+    <div class="strats">${STRATS.map(strCard).join('')}</div>
+    <section class="panel" aria-labelledby="h-cmp"><div class="panel-h"><h2 id="h-cmp">Compare two strategies</h2><span class="muted small">1,000 sessions each</span></div>
+      <div class="row"><label class="f grow">Strategy A<select id="cmp-a">${STRATS.map(s=>`<option value="${s.key}" ${s.key===cmpA?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+      <label class="f grow">Strategy B<select id="cmp-b">${STRATS.map(s=>`<option value="${s.key}" ${s.key===cmpB?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+      <button class="btn primary" type="button" data-act="compare">Run comparison</button></div>
+      ${cmpRes?`<div class="legend"><span><i style="background:var(--accent-2)"></i>${esc(STRATS.find(s=>s.key===cmpRes.a).name)}</span><span><i style="background:var(--warn)"></i>${esc(STRATS.find(s=>s.key===cmpRes.b).name)}</span></div><div class="chart" id="cmp-hist" style="min-height:0"></div>
+        <div class="cols2"><div><h3 style="margin-bottom:6px">${esc(STRATS.find(s=>s.key===cmpRes.a).name)}</h3>${statRow(cmpRes.ra)}</div><div><h3 style="margin-bottom:6px">${esc(STRATS.find(s=>s.key===cmpRes.b).name)}</h3>${statRow(cmpRes.rb)}</div></div>
+        <p class="small muted" style="margin:0">Bust = finishing below 10% of the starting balance. Same ${simBets}-bet sessions and the same outcome pool for both.</p>`:''}
+    </section></div>`;
+}
+function drawStrategyCharts(){
+  $$('[data-hist]').forEach(el=>{ const r=simResults[el.dataset.hist]; if(r) el.innerHTML=histogram([{vals:r.finals,color:'var(--accent-2)',label:'Final balance'}],r.start,el.clientWidth); });
+  const ch=$('#cmp-hist'); if(ch&&cmpRes) ch.innerHTML=histogram([{vals:cmpRes.ra.finals,color:'var(--accent-2)',label:STRATS.find(s=>s.key===cmpRes.a).name},{vals:cmpRes.rb.finals,color:'var(--warn)',label:STRATS.find(s=>s.key===cmpRes.b).name}],cmpRes.ra.start,ch.clientWidth);
+}
+
+/* ---------- Settings ---------- */
+let resetArmed=false;
+function viewSettings(agg){
+  const S=DATA.settings, T=S.thresholds, cp=S.chatParser, c=captureState();
+  const num=(id,label,val)=>`<label class="f">${label}<input id="${id}" type="number" value="${val}"></label>`;
+  return `<div class="grid">
+  <section class="panel s12" id="install"><div class="panel-h"><h2>Auto-capture from Twitch chat</h2><span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span></div>
+    <div class="cols2">
+      <ol class="steps">
+        <li>Install <a href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo" target="_blank" rel="noopener">Tampermonkey</a> in Chrome. In <span class="mono">chrome://extensions</span> → Tampermonkey → Details, turn on <b>Allow User Scripts</b>.</li>
+        <li><a href="batgasm-capture.user.js" target="_blank" rel="noopener"><b>Install the Batgasm capture script</b></a>, then click Install in Tampermonkey.</li>
+        <li>Open <a href="https://www.twitch.tv/popout/batgasm/chat?popout=" target="_blank" rel="noopener">Batgasm's chat</a> (or the stream page) and keep it open while you watch.</li>
+        <li>Keep this page open in another tab or window. The header shows <b>Capturing #batgasm</b> and your bets fill in by themselves.</li>
+      </ol>
+      <div class="small muted" style="display:flex;flex-direction:column;gap:8px">
+        <span>The script only reads chat in your own browser. It never types or sends anything. It picks up <span class="mono">!gamble</span> commands and the bot's replies, for everyone, so the odds board and rich list have a big sample.</span>
+        <span>If this page is closed, results wait in Tampermonkey and arrive the next time you open it.</span>
+        <span>If capture goes quiet, check the chat window isn't minimized. Chat extensions that redraw messages, like 7TV, can hide lines from the script.</span>
+      </div>
+    </div></section>
+  <section class="panel s6"><div class="panel-h"><h2>Bankroll &amp; limits</h2></div>
+    <div class="set-grid">
+      ${num('s-start','Starting balance',S.startingBalance)}
+      <label class="f">Currency name<input id="s-cur" type="text" value="${esc(S.currencyName)}"></label>
+      ${num('s-sl','Stop-loss % (session)',S.stopLossPct)}
+      ${num('s-tp','Take-profit % (session)',S.takeProfitPct)}
+      ${num('s-max','Max bet % of bankroll',S.maxBetPctOfBankroll)}
+      ${num('s-passive','Passive per hour (fallback)',S.passivePerHour)}
+      ${num('s-bph','Typical bets per hour',S.betsPerHour)}
+      <label class="f">Theme<select id="s-theme"><option value="dark" ${S.theme!=='light'?'selected':''}>Dark</option><option value="light" ${S.theme==='light'?'selected':''}>Light</option></select></label>
+    </div></section>
+  <section class="panel s6"><div class="panel-h"><h2>Recommendation thresholds</h2></div>
+    <div class="set-grid">
+      ${num('t-chaseMult','Chase: bet > N× average',T.chaseMult)}
+      ${num('t-tiltLossStreak','Tilt: losses in a row',T.tiltLossStreak)}
+      ${num('t-hotMinBets','Hot/cold game: min bets',T.hotMinBets)}
+      ${num('t-coldRoi','Cold game: ROI below %',T.coldRoi)}
+      ${num('t-badHourMinBets','Bad hours: min bets',T.badHourMinBets)}
+      ${num('t-badHourGap','Bad hours: ROI gap (pts)',T.badHourGap)}
+      ${num('t-winStreakWarn','Streak reminder at W',T.winStreakWarn)}
+      ${num('t-lowBankrollMult','Low bankroll: < N× avg bet',T.lowBankrollMult)}
+      ${num('t-allInPct','All-in warning at % of balance',T.allInPct)}
+      ${num('t-sessionGapHours','New session after idle hours',T.sessionGapHours)}
+    </div></section>
+  <section class="panel s6"><div class="panel-h"><h2>Chat reading</h2></div>
+    <div class="set-grid">
+      <label class="f">Your username<input id="p-user" type="text" value="${esc(cp.username)}"></label>
+      <label class="f">Bot accounts (comma separated)<input id="p-bots" type="text" value="${esc(cp.bots)}"></label>
+      <label class="f">"won N" means<select id="p-winamt"><option value="payout" ${cp.winAmount!=='profit'?'selected':''}>total payout (Batgasm)</option><option value="profit" ${cp.winAmount==='profit'?'selected':''}>profit only</option></select></label>
+      <label class="f">Game if no command seen<select id="p-game">${S.games.map(g=>`<option ${g===cp.defaultGame?'selected':''}>${esc(g)}</option>`).join('')}</select></label>
+    </div>
+    <label class="f">Result patterns (regex, one per line; groups: user, kind, amount, optional roll, total)<textarea id="p-result" rows="3">${esc(cp.resultRegex)}</textarea></label>
+    <label class="f">Commands → game (one per line)<textarea id="p-cmds" rows="3">${esc(cp.commandGames)}</textarea></label>
+    <div class="row"><button class="btn sm ghost" type="button" data-act="reset-patterns">Restore Batgasm defaults</button></div>
+    <label class="f">Test a chat line<input id="p-test" type="text" placeholder="Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins"></label>
+    <div id="p-test-out" class="small mono muted">Paste a line to test it.</div></section>
+  <section class="panel s6"><div class="panel-h"><h2>Games</h2><span class="muted small">presets feed sims until there's real data</span></div>
+    <div>${S.games.map((g,i)=>{ const p=S.gamePresets[g]||{mult:2,p:.45}; return `<div class="gedit"><label class="f gn">Name<input type="text" data-gname="${i}" value="${esc(g)}"></label><label class="f">Win ×<input type="number" step="0.1" data-gmult="${i}" value="${p.mult}"></label><label class="f">Win chance %<input type="number" step="1" data-gp="${i}" value="${Math.round(p.p*100)}"></label><button class="btn sm danger" type="button" data-act="del-game" data-i="${i}" ${S.games.length<2?'disabled':''}>Remove</button></div>`; }).join('')}</div>
+    <div class="row"><button class="btn" type="button" data-act="add-game">Add game</button></div></section>
+  <section class="panel s12"><div class="panel-h"><h2>Data</h2><span class="muted small">${storageOK?'Saved in this browser only. Export to back it up or move devices.':'<span class="neg">Browser storage is blocked here, so data lasts only until you close the page. Export before leaving.</span>'}</span></div>
+    <div class="cols2">
+      <div style="display:flex;flex-direction:column;gap:8px"><h3>Export</h3><textarea id="exp" rows="4" readonly>${esc(JSON.stringify(DATA))}</textarea><div class="row"><button class="btn" type="button" data-act="copy-export">Copy JSON</button><button class="btn" type="button" data-act="download-export">Download .json</button><span class="small muted">${fmt(DATA.bets.length)} entries · ${fmt(DATA.chat.rolls.length)} chat rolls</span></div></div>
+      <div style="display:flex;flex-direction:column;gap:8px"><h3>Import</h3><textarea id="imp" rows="4" placeholder="Paste exported JSON here"></textarea><div class="row"><input id="imp-file" type="file" accept=".json,application/json" aria-label="Import file" style="max-width:220px"><button class="btn primary" type="button" data-act="import">Import (replaces all)</button></div></div>
+      <div style="display:flex;flex-direction:column;gap:8px"><h3>Demo &amp; reset</h3><div class="row"><button class="btn" type="button" data-act="load-demo">Load demo data</button><button class="btn" type="button" data-act="clear-demo" ${hasDemo()?'':'disabled'}>Remove demo data</button></div>
+        <div class="row"><button class="btn danger ${resetArmed?'armed':''}" type="button" data-act="reset">${resetArmed?'Tap again to erase everything':'Reset all data'}</button></div>${resetArmed?'<span class="small neg">This deletes every bet, session, goal, chat roll and setting. Export first if you want a backup.</span>':''}</div>
+    </div><p class="small muted" style="margin:0">Tracker v${APP_VERSION}${BRIDGE.version?` · capture script v${esc(BRIDGE.version)}`:''}</p></section></div>`;
+}
+
+/* ==================================================================
+   EVENTS
+   ================================================================== */
+function qaWager(){ return parseAmount($('#qa-wager').value); }
+function qaLog(mult){ const w=qaWager(); if(!(w>0)){ toast('Type a wager first'); $('#qa-wager').focus(); return; } logBet({game:$('#qa-game').value,wager:w,net:Math.round(w*mult)-Math.round(w)}); }
+function openCustom(){ const box=$('#qa-custom'); box.hidden=false; const g=$('#qa-game').value; const p=DATA.settings.gamePresets[g]; $('#qa-mult').value=p?p.mult:2; $('#qa-payout').value=''; measure(); $('#qa-mult').focus(); $('#qa-mult').select(); }
+function closeCustom(){ $('#qa-custom').hidden=true; measure(); }
+function logCustom(){ const w=qaWager(); if(!(w>0)){ toast('Type a wager first'); $('#qa-wager').focus(); return; }
+  const pay=parseAmount($('#qa-payout').value), m=parseFloat($('#qa-mult').value);
+  let net; if(isFinite(pay)) net=Math.round(pay)-Math.round(w); else if(isFinite(m)&&m>=0) net=Math.round(w*m)-Math.round(w); else { toast('Enter a multiplier or a payout'); return; }
+  closeCustom(); logBet({game:$('#qa-game').value,wager:w,net}); }
+function updateHint(){ const el=$('#qa-hint'); if(!el) return; const w=qaWager(), agg=getAgg(); if(!(w>0)){ el.innerHTML= agg.balance>0? `Max bet at ${DATA.settings.maxBetPctOfBankroll}%: <span class="num">${money(agg.balance*DATA.settings.maxBetPctOfBankroll/100)}</span> · keys: L loss, W custom win, Z undo` : 'Sync your balance first, then type a wager.'; return; }
+  const f= agg.balance>0? w/agg.balance : 1; const over=f*100>DATA.settings.maxBetPctOfBankroll;
+  el.innerHTML=`${money(w)} = <b class="${f>=.5?'neg':over?'warnc':'pos'}">${(f*100).toFixed(1)}%</b> of balance${f>=.5?' · all-in territory':over?` · over your ${DATA.settings.maxBetPctOfBankroll}% limit`:''}`; }
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return; const a=b.dataset.act, agg=getAgg();
+  switch(a){
+    case 'qa-loss': qaLog(0); break;
+    case 'qa-win2': qaLog(2); break;
+    case 'qa-win3': qaLog(3); break;
+    case 'qa-custom': openCustom(); break;
+    case 'qa-custom-log': logCustom(); break;
+    case 'qa-custom-close': closeCustom(); break;
+    case 'undo': undo(); break;
+    case 'clear-demo': clearDemo(false); break;
+    case 'load-demo': loadDemo(); break;
+    case 'toggle-recs': showAllRecs=!showAllRecs; render(); break;
+    case 'bal-range': balRange=b.dataset.v; render(); break;
+    case 'del-goal': DATA.goals=DATA.goals.filter(g=>g.id!==b.dataset.id); commit(); break;
+    case 'more': logPage++; render(); break;
+    case 'edit': editing=b.dataset.id; confirmDel=null; render(); break;
+    case 'cancel-edit': editing=null; render(); break;
+    case 'del': if(confirmDel===b.dataset.id){ DATA.bets=DATA.bets.filter(x=>x.id!==b.dataset.id); confirmDel=null; commit(); toast('Entry deleted'); } else { confirmDel=b.dataset.id; render(); } break;
+    case 'parse': { const S=DATA.settings; pasteText=$('#chat-paste').value; const evs=linesToEvents(pasteText); parsed=planIngest(evs,{cfg:S.chatParser,presets:S.gamePresets,balance:agg.balance,seenKeys:DATA.meta.seenKeys,pending:DATA.meta.pending}); parsed.events=evs; render(); break; }
+    case 'clear-parsed': parsed=null; pasteText=''; render(); break;
+    case 'import-parsed': { if(!parsed) break; const p=ingestEvents(parsed.events,{source:'paste'}); const mine=p.entries.filter(x=>x.kind==='bet').length; parsed=null; pasteText=''; render(); toast(`Imported ${mine} of your bets and ${p.chat.length} chat rolls`); break; }
+    case 'sim': { const k=b.dataset.k; b.disabled=true; b.textContent='Running…'; setTimeout(()=>{ simResults[k]=runSim(k,agg); render(); },20); break; }
+    case 'compare': { b.disabled=true; b.textContent='Running…'; const A=$('#cmp-a').value, B=$('#cmp-b').value; cmpA=A; cmpB=B; setTimeout(()=>{ cmpRes={a:A,b:B,ra:runSim(A,agg),rb:runSim(B,agg)}; render(); },20); break; }
+    case 'add-game': { const S=DATA.settings; let n='New game', i=2; while(S.games.includes(n)) n='New game '+(i++); S.games.push(n); S.gamePresets[n]={mult:2,p:.45}; commit(); break; }
+    case 'del-game': { const S=DATA.settings; const i=+b.dataset.i; if(S.games.length>1){ S.games.splice(i,1); commit(); } break; }
+    case 'reset-patterns': Object.assign(DATA.settings.chatParser,{resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP,bots:'Streamlabs, StreamElements, Nightbot',winAmount:'payout'}); commit(); toast('Batgasm defaults restored'); break;
+    case 'copy-export': { const ta=$('#exp'); const txt=ta.value; const fallback=()=>{ ta.focus(); ta.select(); toast('Press Ctrl+C to copy the selected JSON'); }; try{ navigator.clipboard.writeText(txt).then(()=>toast('Copied JSON to clipboard'),fallback); }catch(err){ fallback(); } break; }
+    case 'download-export': { const blob=new Blob([JSON.stringify(DATA)],{type:'application/json'}); const a2=document.createElement('a'); a2.href=URL.createObjectURL(blob); a2.download=`batgasm-tracker-${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a2); a2.click(); setTimeout(()=>{ URL.revokeObjectURL(a2.href); a2.remove(); },500); break; }
+    case 'import': doImport(); break;
+    case 'reset': if(resetArmed){ DATA=emptyData(); resetArmed=false; parsed=null; simResults={}; cmpRes=null; commit(); toast('All data erased'); } else { resetArmed=true; render(); setTimeout(()=>{ if(resetArmed){ resetArmed=false; if(route()==='setup') render(); } },6000); } break;
+  }
+});
+$('#sess-btn').addEventListener('click',()=>{ if(openSession()) endSession(); else { if(hasDemo()) clearDemo(true); startSession(getAgg().balance); commit(); toast('Session started'); } });
+
+function doImport(){
+  const fileEl=$('#imp-file'); const f=fileEl.files&&fileEl.files[0];
+  const apply=txt=>{ try{ const d=JSON.parse(txt); if(!d||!Array.isArray(d.bets)) throw new Error('No "bets" array found'); DATA=migrate(d); commit(); toast(`Imported ${fmt(DATA.bets.length)} entries`); }catch(err){ toast('Import failed: '+err.message); } };
+  if(f){ const rd=new FileReader(); rd.onload=()=>apply(rd.result); rd.onerror=()=>toast('Could not read that file'); rd.readAsText(f); }
+  else if($('#imp').value.trim()) apply($('#imp').value);
+  else toast('Paste JSON or choose a file first');
+}
+document.addEventListener('submit',e=>{
+  const f=e.target.closest('[data-form]'); if(!f) return; e.preventDefault();
+  const kind=f.dataset.form;
+  if(kind==='sync'){ syncBalance(parseAmount($('#sync-bal').value)); }
+  else if(kind==='goal'){ const name=$('#goal-name').value.trim(), target=parseAmount($('#goal-target').value); if(!name||!(target>0)){ toast('Give the goal a name and a target'); return; } DATA.goals.push({id:uid(),name,target:Math.round(target),created:new Date().toISOString()}); commit(); toast('Goal added'); }
+  else if(kind==='edit'){ const b=DATA.bets.find(x=>x.id===f.dataset.id); if(!b) return; const w=parseAmount($('#e-wager').value), n=parseFloat(String($('#e-net').value).replace(/,/g,'')), ts=new Date($('#e-ts').value);
+    if(!isFinite(w)||w<0||!isFinite(n)){ toast('Wager and net must be numbers'); return; }
+    b.game=$('#e-game').value; b.wager=Math.round(w); b.net=Math.round(n); if(!isNaN(+ts)) b.ts=ts.toISOString(); b.tags=$('#e-tags').value.split(',').map(s=>s.trim()).filter(Boolean); b.notes=$('#e-notes').value.trim();
+    editing=null; commit(); toast('Entry updated'); }
+});
+document.addEventListener('change',e=>{
+  const t=e.target, S=DATA.settings;
+  if(t.id==='log-filter'){ logFilter=t.value; logPage=1; render(); return; }
+  if(t.id==='sim-game'){ simGame=t.value; simResults={}; render(); return; }
+  if(t.id==='sim-start'){ const v=parseAmount(t.value); simStart= v>0? Math.round(v) : null; simResults={}; cmpRes=null; render(); return; }
+  if(t.id==='sim-bets'){ simBets=clamp(Math.round(+t.value)||100,10,2000); simResults={}; cmpRes=null; render(); return; }
+  if(t.id==='cmp-a'){ cmpA=t.value; return; } if(t.id==='cmp-b'){ cmpB=t.value; return; }
+  const map={'s-start':['startingBalance','int'],'s-sl':['stopLossPct','num'],'s-tp':['takeProfitPct','num'],'s-max':['maxBetPctOfBankroll','num'],'s-passive':['passivePerHour','int'],'s-bph':['betsPerHour','num']};
+  if(map[t.id]){ const [k,ty]=map[t.id]; const v=+t.value; if(isFinite(v)) S[k]= ty==='int'? Math.round(v) : v; commit(); return; }
+  if(t.id==='s-cur'){ S.currencyName=t.value.trim()||'points'; commit(); return; }
+  if(t.id==='s-theme'){ S.theme=t.value; commit(); return; }
+  if(t.id && t.id.startsWith('t-')){ const k=t.id.slice(2); const v=+t.value; if(isFinite(v)) S.thresholds[k]=v; commit(); return; }
+  const pmap={'p-user':'username','p-bots':'bots','p-game':'defaultGame','p-result':'resultRegex','p-cmds':'commandGames','p-winamt':'winAmount'};
+  if(pmap[t.id]){ S.chatParser[pmap[t.id]]= t.tagName==='INPUT'? t.value.trim() : t.value; commit(); return; }
+  if(t.dataset.gname!=null){ const i=+t.dataset.gname, old=S.games[i], nn=t.value.trim(); if(!nn||nn===old) return; if(S.games.includes(nn)){ toast('That game already exists'); render(); return; } S.games[i]=nn; S.gamePresets[nn]=S.gamePresets[old]||{mult:2,p:.45}; delete S.gamePresets[old]; DATA.bets.forEach(b=>{ if(b.game===old) b.game=nn; }); if(S.chatParser.defaultGame===old) S.chatParser.defaultGame=nn; commit(); return; }
+  if(t.dataset.gmult!=null){ const g=S.games[+t.dataset.gmult]; const v=+t.value; if(v>0){ S.gamePresets[g]={...(S.gamePresets[g]||{p:.45}),mult:v}; commit(); } return; }
+  if(t.dataset.gp!=null){ const g=S.games[+t.dataset.gp]; const v=+t.value; if(v>=0&&v<=100){ S.gamePresets[g]={...(S.gamePresets[g]||{mult:2}),p:v/100}; commit(); } return; }
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='qa-wager') updateHint();
+  if(e.target.id==='p-test'){ const S=DATA.settings, cfg={...S.chatParser,resultRegex:$('#p-result').value,username:$('#p-user').value,bots:$('#p-bots').value}; const ev=linesToEvents(e.target.value)[0]; const out=$('#p-test-out');
+    const errs=compileRegexList(cfg.resultRegex).errors; if(errs.length){ out.innerHTML=`<span class="neg">${errs.map(esc).join('<br>')}</span>`; return; }
+    if(!ev){ out.textContent='Paste a line to test it.'; return; }
+    const p=parseEvent(ev,cfg);
+    out.innerHTML= !p? `<span class="warnc">✗ Not recognised${ev.author?` (author "${esc(ev.author)}" ${String(cfg.bots).toLowerCase().includes(ev.author.toLowerCase())?'is':'is not'} a listed bot)`:''}</span>`
+      : p.type==='cmd'? `<span class="pos">✓ command</span> · ${esc(p.user)} !${esc(p.cmd)} ${esc(p.arg)}`
+      : `<span class="pos">✓ ${p.kind}</span> · ${esc(p.user)}${p.user.toLowerCase()===String(cfg.username).toLowerCase()?' (you)':''} · amount ${fmt(p.amount)}${p.roll!=null?` · roll ${p.roll}`:''}${p.total!=null?` · now has ${fmt(p.total)}`:''}`; }
+});
+document.addEventListener('keydown',e=>{
+  if(route()!=='log') return;
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  const t=e.target, tag=t.tagName, inWager=t.id==='qa-wager', inCustom=t.id==='qa-mult'||t.id==='qa-payout';
+  if(inCustom && e.key==='Enter'){ e.preventDefault(); logCustom(); return; }
+  if(inCustom && e.key==='Escape'){ closeCustom(); $('#qa-wager').focus(); return; }
+  const typing=(tag==='INPUT'&&!inWager)||tag==='TEXTAREA'||tag==='SELECT'||t.isContentEditable;
+  if(typing) return;
+  const k=e.key.toLowerCase();
+  if(k==='l'){ e.preventDefault(); qaLog(0); }
+  else if(k==='w'){ e.preventDefault(); openCustom(); }
+  else if(k==='z'){ e.preventDefault(); undo(); }
+});
+$('#qa-game').addEventListener('change',()=>{ if(!$('#qa-custom').hidden){ const p=DATA.settings.gamePresets[$('#qa-game').value]; $('#qa-mult').value=p?p.mult:2; } });
+window.addEventListener('hashchange',()=>{ editing=null; confirmDel=null; resetArmed=false; render(); window.scrollTo(0,0); });
+let rzT=null; window.addEventListener('resize',()=>{ clearTimeout(rzT); rzT=setTimeout(()=>{ measure(); const r=route(); if(r==='stats') drawBalanceChart(getAgg(),'bal-chart',balRange); if(r==='live') drawBalanceChart(getAgg(),'live-chart','session'); if(r==='strategies') drawStrategyCharts(); },120); });
+window.addEventListener('storage',e=>{ if(e.key===LS_KEY && e.newValue){ try{ DATA=migrate(JSON.parse(e.newValue)); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; render(); }catch(err){} } });
+setInterval(()=>{ const s=openSession(); if(s){ const before=!!openSession(); activeSession(Date.now()); if(before && !openSession()){ commit(); return; } } renderSessionPill(getAgg()); renderCapture(); },15000);
+if(openSession()){ activeSession(Date.now()); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; }
+render();
+</script>
+</body>
+</html>
