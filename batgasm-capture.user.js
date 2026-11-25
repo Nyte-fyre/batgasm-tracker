@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Batgasm Casino Tracker - chat capture
 // @namespace    https://nyte-fyre.github.io/batgasm-tracker/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Reads !gamble commands and Streamlabs results from twitch.tv/batgasm chat and hands them to your Batgasm Casino Tracker tab. Read-only: it never sends chat messages.
 // @match        https://www.twitch.tv/*
 // @match        https://nyte-fyre.github.io/batgasm-tracker/*
@@ -16,12 +16,12 @@
 
 (function () {
   'use strict';
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   const CHANNEL = 'batgasm';
   // Accounts whose messages are always captured (bot replies).
   const BOTS = /^(streamlabs|streamelements|nightbot|moobot|fossabot|wizebot)$/i;
   // Commands captured from anyone, so the tracker can pair wagers with results.
-  const COMMANDS = /^!(gamble|duel|heist|slots|roulette|points)\b/i;
+  const COMMANDS = /^!(gamble|duel|heist|slots|roulette|coins)\b/i;
   const MAX_QUEUE = 3000;
 
   if (location.hostname.endsWith('twitch.tv')) twitchSide();

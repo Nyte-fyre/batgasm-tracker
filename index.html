@@ -601,7 +601,7 @@ function planIngest(events,ctx){
       p.list.forEach(x=>out.balances.push({ts:ev.ts,user:x.user,total:x.total,rank:x.rank,src:'top'})); out.rows.push({ev,status:'top',n:p.list.length}); continue; }
     if(p.type==='points'){ const k='pts|'+p.user.toLowerCase()+'|'+p.total; if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
       out.balances.push({ts:ev.ts,user:p.user,total:p.total,src:'points'});
-      if(p.user.toLowerCase()===me && p.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:p.total-bal,first:bal===0,note: bal===0?`Starting balance from !points (${fmt(p.total)})`:`Synced from !points (${fmt(p.total)})`}); bal=p.total; }
+      if(p.user.toLowerCase()===me && p.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:p.total-bal,first:bal===0,note: bal===0?`Starting balance from !coins (${fmt(p.total)})`:`Synced from !coins (${fmt(p.total)})`}); bal=p.total; }
       out.rows.push({ev,status:'points',user:p.user,total:p.total}); continue; }
     const u=p.user.toLowerCase();
     if(p.type==='cmd'){ if(cmdGame[p.cmd]){ pending[u]={cmd:p.cmd,arg:p.arg,ts:ev.ts}; out.rows.push({ev,status:'cmd',user:p.user,game:cmdGame[p.cmd]}); } else out.rows.push({ev,status:'skip',reason:`!${p.cmd} is not a betting command`}); continue; }
@@ -776,7 +776,7 @@ function logBet({game,wager,net,notes=''}){
   if(!(wager>0)){ toast('Enter a wager first'); $('#qa-wager').focus(); return; }
   if(hasDemo()){ clearDemo(true); toast('Demo cleared. Logging your real bets now.'); }
   const agg=getAgg(); const before=agg.balance;
-  if(before<=0){ toast(`Your tracked balance is ${fmt(before)}. Sync with !points first.`,{label:'Sync',fn:()=>$('#sync-bal')?.focus()}); return; }
+  if(before<=0){ toast(`Your tracked balance is ${fmt(before)}. Sync with !coins first.`,{label:'Sync',fn:()=>$('#sync-bal')?.focus()}); return; }
   let s=activeSession(Date.now()); if(!s) s=startSession(before);
   const tags=['manual']; const frac=wager/before;
   if(frac>=.99) tags.push('all-in'); if(frac*100>DATA.settings.maxBetPctOfBankroll) tags.push('oversized');
@@ -789,12 +789,12 @@ function undo(){ if(!DATA.bets.length){ toast('Nothing to undo'); return; } cons
   const s=DATA.sessions.find(x=>x.id===b.sessionId); if(s && !DATA.bets.some(x=>x.sessionId===s.id) && !s.end) DATA.sessions=DATA.sessions.filter(x=>x.id!==s.id);
   commit(); toast(`Removed ${b.game} ${money(b.net,true)}`); }
 function syncBalance(actual){
-  if(!isFinite(actual)){ toast('Enter your !points balance'); return; }
+  if(!isFinite(actual)){ toast('Enter your !coins balance'); return; }
   actual=Math.round(actual); if(hasDemo()) clearDemo(true);
   const bal=getAgg().balance, d=actual-bal;
   if(d===0){ commit(); toast('Already in sync ✓'); return; }
   const s=activeSession(Date.now());
-  DATA.bets.push({id:uid(),ts:new Date().toISOString(),sessionId:s?s.id:null,game:ADJ,command:'!points',wager:0,net:d,tags:['sync','manual'],notes:`Synced to ${fmt(actual)} from !points`});
+  DATA.bets.push({id:uid(),ts:new Date().toISOString(),sessionId:s?s.id:null,game:ADJ,command:'!coins',wager:0,net:d,tags:['sync','manual'],notes:`Synced to ${fmt(actual)} from !coins`});
   commit(); toast(`Adjustment ${money(d,true)} · balance ${money(actual)}`);
 }
 function flashBalance(net){ const el=$('#hdr-bal'); el.classList.remove('flash-w','flash-l'); void el.offsetWidth; el.classList.add(net>0?'flash-w':'flash-l'); setTimeout(()=>el.classList.remove('flash-w','flash-l'),900); }
@@ -1019,7 +1019,7 @@ function viewLive(agg){
   </section>
   <section class="panel s4"><div class="panel-h"><h2>Chat rich list</h2><span class="muted small">${board.players} seen${board.myRank?` · you’re #${board.myRank}`:''}</span></div>
     ${board.rich.length?`<div class="rich">${board.rich.slice(0,8).map((p,i)=>`<div class="${p.user.toLowerCase()===S.chatParser.username.toLowerCase()?'me':''}"><span class="rk">#${i+1}</span><span class="nm">${esc(p.user)}</span><span class="num">${money(p.total)}</span></div>`).join('')}${meRow?`<div class="me"><span class="rk">#${board.myRank}</span><span class="nm">${esc(meRow.user)}</span><span class="num">${money(meRow.total)}</span></div>`:''}</div>
-      <div class="small muted">Latest balance from any bot reply seen while you watched: !gamble results, !points and !top.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
+      <div class="small muted">Latest balance from any bot reply seen while you watched: !gamble results, !coins and !top.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
   </section></div>`;
 }
 
@@ -1150,8 +1150,8 @@ function viewLog(agg){
   const chatN=parsed? parsed.rows.filter(r=>r.status==='chat').length : 0;
   return `<div class="grid">
   <section class="panel s5" aria-labelledby="h-sync">
-    <div class="panel-h"><h2 id="h-sync">Sync with !points</h2></div>
-    <p class="muted small" style="margin:0">With auto-capture on you rarely need this, since every bot reply carries your balance. Otherwise type your balance from <span class="mono">!points</span> and an Adjustment entry makes the numbers match.</p>
+    <div class="panel-h"><h2 id="h-sync">Sync with !coins</h2></div>
+    <p class="muted small" style="margin:0">With auto-capture on you rarely need this, since every bot reply carries your balance. Otherwise type your balance from <span class="mono">!coins</span> and an Adjustment entry makes the numbers match.</p>
     <form class="row" data-form="sync"><label class="f grow">Actual balance<input id="sync-bal" type="text" inputmode="numeric" placeholder="${fmt(agg.balance)}"></label><button class="btn primary" type="submit">Sync</button></form>
     <div class="panel-h" style="margin-top:6px"><h2>Sessions</h2><span class="muted small">${agg.sessions.length} total</span></div>
     <div>${agg.sessions.length? [...agg.sessions].reverse().slice(0,12).map(s=>`<div class="sessrow"><span>${when(s.start)}${s.end?'':' <span class="badge solid-s">live</span>'}${s.demo?' <span class="badge small-s">demo</span>':''}<br><span class="muted small">${s.n} bets · ${dur(s.durH)}${s.disciplined?' · disciplined ✓':s.end&&s.violations?` · ${s.violations} rule break${s.violations>1?'s':''}`:''}</span></span><span class="num ${cls(s.net)}">${money(s.net,true)}</span></div>`).join('') : '<div class="empty">Sessions start automatically with your first bet.</div>'}</div>
@@ -1161,7 +1161,7 @@ function viewLog(agg){
     <p class="muted small" style="margin:0">Paste lines like <span class="mono">Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins</span>. Your own <span class="mono">!gamble</span> lines help pair the exact wager. Duplicates are skipped.</p>
     <textarea id="chat-paste" rows="5" placeholder="SireBlade: !gamble 10000000&#10;Streamlabs: Rolled 23, @SireBlade lost 10000000 Bat-Coins and now has 150009600 Bat-Coins">${esc(pasteText)}</textarea>
     <div class="row"><button class="btn" type="button" data-act="parse">Preview</button>${parsed&&(mine.length||chatN)?`<button class="btn primary" type="button" data-act="import-parsed">Import ${mine.length} of your bets${chatN?` + ${chatN} chat rolls`:''}</button>`:''}${parsed?`<button class="btn ghost" type="button" data-act="clear-parsed">Clear</button>`:''}</div>
-    ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:r.status==='top'?`<span class="muted">!top list · ${r.n} balances</span>`:r.status==='points'?`<span class="muted">!points · ${esc(r.user)} has ${money(r.total)}</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
+    ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:r.status==='top'?`<span class="muted">!top list · ${r.n} balances</span>`:r.status==='points'?`<span class="muted">!coins · ${esc(r.user)} has ${money(r.total)}</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
   </section>
   <section class="panel s12" aria-labelledby="h-bets">
     <div class="panel-h"><h2 id="h-bets">All entries</h2>
