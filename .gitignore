@@ -1,2 +1,4 @@
 batgasm-tracker.html
 .claude/
+worker/.wrangler/
+node_modules/

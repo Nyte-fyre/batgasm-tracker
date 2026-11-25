@@ -1,0 +1,20 @@
+# Batgasm chat feed: reads twitch.tv/batgasm chat anonymously (read-only) and serves
+# gambling-related messages to the tracker site.
+#   npx wrangler deploy            (from this folder)
+#   npx wrangler secret put IMPORT_TOKEN   (protects POST /import, used for backfills)
+name = "batgasm-feed"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Safety net: wakes the collector every 5 minutes in case its own alarm stopped.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[durable_objects.bindings]]
+name = "COLLECTOR"
+class_name = "Collector"
+
+# Free plan: Durable Objects must use the SQLite backend.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Collector"]

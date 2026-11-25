@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Batgasm Casino Tracker</title>
-<meta name="description" content="SireBlade's self-tracking dashboard for !gamble in twitch.tv/batgasm. Stream points only.">
+<meta name="description" content="Type your Twitch name and see your !gamble stats from twitch.tv/batgasm. Stream points only.">
 <meta name="theme-color" content="#16131e">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='6' fill='%239146ff'/%3E%3Ccircle cx='11' cy='11' r='2.6' fill='white'/%3E%3Ccircle cx='21' cy='21' r='2.6' fill='white'/%3E%3Ccircle cx='16' cy='16' r='2.6' fill='white'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,6 +52,12 @@ a{color:var(--accent-2)}
 .brand{display:flex;flex-direction:column;min-width:0;flex:1 1 220px}
 .brand h1{font-size:19px;font-weight:700;line-height:1.15}
 .brand h1 span{color:var(--accent-2)}
+.who{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;border-bottom:2px dashed var(--accent);line-height:1.1}
+.who:hover{color:var(--accent-2)}
+.onboard{background:linear-gradient(160deg,var(--accent-soft),var(--surface) 70%);border:1px solid var(--accent);border-radius:var(--r);padding:22px;display:flex;flex-direction:column;gap:12px}
+.onboard h2{font-size:22px;text-transform:none;letter-spacing:0}
+.onboard form{display:flex;gap:8px;flex-wrap:wrap;max-width:520px}
+.onboard input{font-size:18px;flex:1 1 200px}
 .brand .sub{font-size:12px;color:var(--muted)}
 .hbal{display:flex;flex-direction:column;align-items:flex-end}
 .hbal .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -273,7 +279,7 @@ ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;f
 <header class="top">
   <div class="wrap top-in">
     <div class="brand">
-      <h1>SireBlade <span>·</span> Batgasm Casino Tracker</h1>
+      <h1><button id="who" class="who" type="button" data-act="change-user" title="Change whose stats you see">Pick a name</button> <span>·</span> Batgasm Casino Tracker</h1>
       <div class="sub">!gamble stats from twitch.tv/batgasm</div>
     </div>
     <div class="hsess">
@@ -648,7 +654,7 @@ function recommendations(agg,data,ctx={}){
   const add=(sev,title,d,action,pri=0)=>out.push({sev,title,data:d,action,pri});
   const od=ctx.odds;
   if(od && od.n>=50 && od.ev!=null) add(od.ev<0?'info':'positive','The house edge',`Chat's ${fmt(od.n)} rolls: ${pct(od.winRate)} win at ×${od.avgMult.toFixed(2)} → ${pctS(od.ev)} per bet`,od.ev<0?`Every bet loses ${Math.abs(od.ev*100).toFixed(1)}% on average. Smaller bets just lose slower.`:'Chat is running hot so far. That is likely variance, not an edge.',0);
-  if(!agg.totalBets){ add('info','No bets logged yet',`0 bets · balance ${fmt(agg.balance)}`,'Turn on auto-capture in Settings, or sync your balance on the Bet log tab.'); return out.sort((a,b)=>SEV[a.sev]-SEV[b.sev]||b.pri-a.pri); }
+  if(!agg.totalBets){ add('info','No bets logged yet',`0 bets · balance ${fmt(agg.balance)}`,'Bets show up here by themselves after this name gambles in Batgasm\'s chat.'); return out.sort((a,b)=>SEV[a.sev]-SEV[b.sev]||b.pri-a.pri); }
   const last=agg.real[agg.real.length-1], lf=agg.flags[last.id]||{};
   const cs=agg.currentSession;
   if(cs && cs.startBalance>0){
@@ -705,7 +711,7 @@ const LS_KEY='batgasm-tracker-v2';
 const uid=()=> (window.crypto&&crypto.randomUUID)? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 function defaultSettings(){ return {startingBalance:0,currencyName:'Bat-Coins',stopLossPct:20,takeProfitPct:30,maxBetPctOfBankroll:5,
   games:[...DEFAULT_GAMES], gamePresets:JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
-  chatParser:{enabled:true,username:'SireBlade',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
+  chatParser:{enabled:true,username:'',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
   thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, theme:'dark'}; }
 function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[],balances:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
 function migrate(d){
@@ -756,7 +762,7 @@ function makeDemo(seed=DEMO_SEED){
       w=Math.min(w,bal); if(w<1) break;
       const late=p.late && new Date(t).getHours()<5;
       let roll=null, net;
-      if(game==='Gamble'){ roll= late? 1+Math.floor(rnd()*92) : r100(); net= roll>=61? w : -w; rolls.push({ts:t,user:'SireBlade',roll,won:net>0,amount:net>0?2*w:w,total:bal+net,wager:w,game,demo:true}); }
+      if(game==='Gamble'){ roll= late? 1+Math.floor(rnd()*92) : r100(); net= roll>=61? w : -w; rolls.push({ts:t,user:'demo_you',roll,won:net>0,amount:net>0?2*w:w,total:bal+net,wager:w,game,demo:true}); }
       else net= rnd()<.5? w : -w;
       bal+=net; lastNet=net; lastW=w;
       bets.push({id:'demo-b'+si+'-'+i,ts:new Date(t).toISOString(),sessionId:sid,game,command:'!'+game.toLowerCase()+' '+w,wager:w,net,roll,tags:['auto'],notes:'',demo:true});
@@ -875,8 +881,49 @@ window.addEventListener('message',e=>{
   try{ e.source.postMessage({source:'batgasm-tracker',type:'backfill-done',result:res},e.origin); }catch(err){}
   if(res) toast(`Imported Streamlabs history: ${res.mine} of your bets, ${fmt(res.rolls)} chat rolls`);
 });
+/* ---------- shared chat feed (Cloudflare Worker reading chat anonymously, read-only) ---------- */
+const FEED='https://batgasm-feed.nytefyre.workers.dev';
+const FEED_STATE={ok:null,lastPoll:0,error:null,busy:false,lastChatAt:null};
+let switchRequested=false;
+async function fetchFeed(since){
+  const all=[]; let s=since;
+  for(let i=0;i<40;i++){ const r=await fetch(`${FEED}/events?since=${s}&limit=5000`,{cache:'no-store'}); if(!r.ok) throw new Error('feed '+r.status); const j=await r.json(); all.push(...j.events); s=j.last; if(!j.more) break; }
+  return {events:all,last:s};
+}
+async function pollFeed(){
+  if(FEED_STATE.busy || !DATA.settings.chatParser.username) return;
+  FEED_STATE.busy=true;
+  try{
+    const since=+DATA.meta.feedSince||0;
+    const {events,last}=await fetchFeed(since);
+    const evs=events.map(e=>({id:'f-'+e.id,ts:+e.ts,author:e.author,text:e.text}));
+    if(!since){ if(evs.length){ const res=runBackfill(evs); if(res) toast(`Loaded ${res.mine} bets for ${DATA.settings.chatParser.username} from ${fmt(evs.length)} chat messages`); } else { if(hasDemo()) clearDemo(true); commit(); } }
+    else if(evs.length) ingestEvents(evs,{source:'live'});
+    DATA.meta.feedSince=last; saveData();
+    FEED_STATE.ok=true; FEED_STATE.error=null; FEED_STATE.lastPoll=Date.now();
+    if(evs.length) FEED_STATE.lastChatAt=evs[evs.length-1].ts;
+  }catch(err){ FEED_STATE.ok=false; FEED_STATE.error=String(err.message||err); }
+  finally{ FEED_STATE.busy=false; renderCapture(); }
+}
+/** Show a different chatter: wipe derived data and rebuild from the whole feed. */
+function switchUser(name){
+  name=String(name||'').trim().replace(/^@/,'');
+  if(!/^\w{2,25}$/.test(name)){ toast('Twitch names are 2–25 letters, numbers or underscores'); return; }
+  DATA.settings.chatParser.username=name;
+  DATA.bets=[]; DATA.sessions=[]; DATA.goals=DATA.goals.filter(g=>!g.demo);
+  DATA.chat={rolls:[],balances:[]}; DATA.settings.startingBalance=0;
+  DATA.meta.seenKeys=[]; DATA.meta.pending={}; DATA.meta.feedSince=0; DATA.meta.evIds=[];
+  switchRequested=false; commit(); toast(`Loading ${name}'s bets…`); pollFeed();
+}
+setInterval(()=>{ if(document.visibilityState==='visible') pollFeed(); },10000);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') pollFeed(); });
 function captureState(){
   const st=BRIDGE.status, now=Date.now();
+  if(!DATA.settings.chatParser.username) return {cls:'wait',text:'Pick a name',tip:'Type a Twitch username to load stats'};
+  if(FEED_STATE.ok) return {cls:'ok pulse',text:'Live feed on',tip: FEED_STATE.lastChatAt? `Last gamble message ${ago(now-FEED_STATE.lastChatAt)}` : 'Reading Batgasm chat. Updates every 10 seconds'};
+  if(FEED_STATE.ok===false && BRIDGE.present && st && now-st.ts<100000 && st.onChannel) return {cls:'ok',text:'Capturing via script',tip:'Shared feed is unreachable, using your Tampermonkey script'};
+  if(FEED_STATE.ok===false) return {cls:'wait',text:'Feed unreachable',tip:'Could not reach the shared feed. Retrying every 10 seconds'};
+  if(FEED_STATE.ok===null) return {cls:'wait',text:'Connecting…',tip:'Loading the shared feed'};
   if(!BRIDGE.present) return document.documentElement.hasAttribute('data-batgasm-capture')
     ? {cls:'wait',text:'Script found, not talking',tip:'The capture script runs here but sent nothing yet. Reload this page'}
     : {cls:'',text:'Auto-capture off',tip:'Capture script not running on this page. Check Tampermonkey: script enabled, Allow User Scripts on, then reload'};
@@ -983,6 +1030,7 @@ let showAllRecs=false;
 function render(){
   const agg=getAgg(), S=DATA.settings, r=route();
   document.documentElement.dataset.ui= S.theme==='light'?'light':'dark';
+  $('#who').textContent=S.chatParser.username||'Pick a name';
   $('#hdr-bal').textContent=fmt(agg.balance);
   $('#bal-lbl').textContent='Balance · '+(S.currencyName||'points');
   renderSessionPill(agg); renderCapture();
@@ -1023,8 +1071,14 @@ function getRecs(agg){
 /* ---------- LIVE (glance) ---------- */
 function capBlock(){
   const c=captureState();
-  if(c.cls.includes('ok')) return `<span class="pill ok pulse"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}</span>`;
-  return `<span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}.</span> <a class="small" href="#setup">How to set it up</a>`;
+  return `<span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}</span>`;
+}
+function onboardBlock(){
+  const cur=DATA.settings.chatParser.username;
+  return `<section class="onboard s12" aria-labelledby="h-who"><h2 id="h-who">Whose stats do you want to see?</h2>
+    <p class="muted" style="margin:0">Type a Twitch username from Batgasm's chat. The tracker loads every <span class="mono">!gamble</span> that name made since 11/20, and new ones arrive by themselves while you watch. Nothing to install, and nothing is ever posted to chat.</p>
+    <form data-form="who"><input id="who-name" type="text" autocomplete="off" spellcheck="false" placeholder="your Twitch name" value="${esc(cur||'')}" aria-label="Twitch username"><button class="btn primary" type="submit">Show stats</button>${cur?'<button class="btn ghost" type="button" data-act="cancel-user">Cancel</button>':''}</form>
+    ${hasDemo()&&!cur?'<span class="small muted">The numbers below are demo data until you pick a name.</span>':''}</section>`;
 }
 function viewLive(agg){
   const S=DATA.settings, cs=agg.currentSession, ls=agg.lastSession, sref=cs||ls, od=getOdds();
@@ -1035,7 +1089,7 @@ function viewLive(agg){
   const streak= agg.curType? `${agg.curType}${agg.curStreak}` : '—';
   const meRow=board.myRank&&board.myRank>8? board.rich[board.myRank-1] : null;
   const cells=od.cells.map((c,i)=>{ const t=c.w+c.l; const col= !t?'':c.w&&!c.l?'var(--win)':c.l&&!c.w?'var(--loss)':'var(--warn)'; return `<span style="${t?`background:${col};opacity:${clamp(.35+t/6,.35,1)}`:''}" data-tip="Roll ${i+1}<br>${t?`${c.w} win · ${c.l} loss`:'not seen yet'}"></span>`; }).join('');
-  return `<div class="grid">
+  return `<div class="grid">${(!S.chatParser.username||switchRequested)?onboardBlock():''}
   <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
   <div class="hero accent s3"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
   <div class="hero s3"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
@@ -1197,8 +1251,8 @@ function viewLog(agg){
   </section>
   <section class="panel s7" aria-labelledby="h-chat">
     <div class="panel-h"><h2 id="h-chat">Paste chat</h2><span class="muted small">for anything auto-capture missed</span></div>
-    <p class="muted small" style="margin:0">Paste lines like <span class="mono">Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins</span>. Your own <span class="mono">!gamble</span> lines help pair the exact wager. Duplicates are skipped.</p>
-    <textarea id="chat-paste" rows="5" placeholder="SireBlade: !gamble 10000000&#10;Streamlabs: Rolled 23, @SireBlade lost 10000000 Bat-Coins and now has 150009600 Bat-Coins">${esc(pasteText)}</textarea>
+    <p class="muted small" style="margin:0">Paste lines like <span class="mono">Streamlabs: Rolled 68, @YourName won 20000000 Bat-Coins and now has 160009800 Bat-Coins</span>. Your own <span class="mono">!gamble</span> lines help pair the exact wager. Duplicates are skipped.</p>
+    <textarea id="chat-paste" rows="5" placeholder="YourName: !gamble 10000000&#10;Streamlabs: Rolled 23, @YourName lost 10000000 Bat-Coins and now has 150009600 Bat-Coins">${esc(pasteText)}</textarea>
     <div class="row"><button class="btn" type="button" data-act="parse">Preview</button>${parsed&&(mine.length||chatN)?`<button class="btn primary" type="button" data-act="import-parsed">Import ${mine.length} of your bets${chatN?` + ${chatN} chat rolls`:''}</button>`:''}${parsed?`<button class="btn ghost" type="button" data-act="clear-parsed">Clear</button>`:''}</div>
     ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:r.status==='top'?`<span class="muted">!top list · ${r.n} balances</span>`:r.status==='points'?`<span class="muted">!coins · ${esc(r.user)} has ${money(r.total)}</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
   </section>
@@ -1315,18 +1369,15 @@ function viewSettings(agg){
   const S=DATA.settings, T=S.thresholds, cp=S.chatParser, c=captureState();
   const num=(id,label,val)=>`<label class="f">${label}<input id="${id}" type="number" value="${val}"></label>`;
   return `<div class="grid">
-  <section class="panel s12" id="install"><div class="panel-h"><h2>Auto-capture from Twitch chat</h2><span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span></div>
+  <section class="panel s12" id="install"><div class="panel-h"><h2>How bets get here</h2><span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span></div>
     <div class="cols2">
-      <ol class="steps">
-        <li>Install <a href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo" target="_blank" rel="noopener">Tampermonkey</a> in Chrome. In <span class="mono">chrome://extensions</span> → Tampermonkey → Details, turn on <b>Allow User Scripts</b>.</li>
-        <li><a href="batgasm-capture.user.js" target="_blank" rel="noopener"><b>Install the Batgasm capture script</b></a>, then click Install in Tampermonkey.</li>
-        <li>Open <a href="https://www.twitch.tv/popout/batgasm/chat?popout=" target="_blank" rel="noopener">Batgasm's chat</a> (or the stream page) and keep it open while you watch.</li>
-        <li>Keep this page open in another tab or window. The header shows <b>Capturing #batgasm</b> and your bets fill in by themselves.</li>
-      </ol>
+      <div class="small" style="display:flex;flex-direction:column;gap:8px">
+        <span><b>Automatic.</b> A small read-only service watches Batgasm's chat around the clock and keeps every <span class="mono">!gamble</span>, slots, duel, <span class="mono">!coins</span> and <span class="mono">!top</span> reply. This page checks it every 10 seconds. Nothing to install.</span>
+        <span>It logs into chat anonymously, the way chat widgets do, so it cannot post. It stores only gambling commands and the Streamlabs bot's replies.</span>
+        <span>Showing stats for <b>${esc(cp.username||'nobody yet')}</b>. <button class="btn sm" type="button" data-act="change-user">Change name</button></span>
+      </div>
       <div class="small muted" style="display:flex;flex-direction:column;gap:8px">
-        <span>The script only reads chat in your own browser. It never types or sends anything. It picks up <span class="mono">!gamble</span> commands and the bot's replies, for everyone, so the odds board and rich list have a big sample.</span>
-        <span>If this page is closed, results wait in Tampermonkey and arrive the next time you open it.</span>
-        <span>If capture goes quiet, check the chat window isn't minimized. Chat extensions that redraw messages, like 7TV, can hide lines from the script.</span>
+        <span><b>Optional backup:</b> the <a href="batgasm-capture.user.js" target="_blank" rel="noopener">Tampermonkey capture script</a> reads chat in your own browser. It's only needed if the shared feed is ever down.${BRIDGE.present?` Script v${esc(BRIDGE.version||'')} detected.`:''}</span>
       </div>
     </div></section>
   <section class="panel s6"><div class="panel-h"><h2>Bankroll &amp; limits</h2></div>
@@ -1363,7 +1414,7 @@ function viewSettings(agg){
     <label class="f">Result patterns (regex, one per line; groups: user, kind, amount, optional roll, total)<textarea id="p-result" rows="3">${esc(cp.resultRegex)}</textarea></label>
     <label class="f">Commands → game (one per line)<textarea id="p-cmds" rows="3">${esc(cp.commandGames)}</textarea></label>
     <div class="row"><button class="btn sm ghost" type="button" data-act="reset-patterns">Restore Batgasm defaults</button></div>
-    <label class="f">Test a chat line<input id="p-test" type="text" placeholder="Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins"></label>
+    <label class="f">Test a chat line<input id="p-test" type="text" placeholder="Streamlabs: Rolled 68, @YourName won 20000000 Bat-Coins and now has 160009800 Bat-Coins"></label>
     <div id="p-test-out" class="small mono muted">Paste a line to test it.</div></section>
   <section class="panel s6"><div class="panel-h"><h2>Games</h2><span class="muted small">presets feed sims until there's real data</span></div>
     <div>${S.games.map((g,i)=>{ const p=S.gamePresets[g]||{mult:2,p:.45}; return `<div class="gedit"><label class="f gn">Name<input type="text" data-gname="${i}" value="${esc(g)}"></label><label class="f">Win ×<input type="number" step="0.1" data-gmult="${i}" value="${p.mult}"></label><label class="f">Win chance %<input type="number" step="1" data-gp="${i}" value="${Math.round(p.p*100)}"></label><button class="btn sm danger" type="button" data-act="del-game" data-i="${i}" ${S.games.length<2?'disabled':''}>Remove</button></div>`; }).join('')}</div>
@@ -1402,6 +1453,8 @@ document.addEventListener('click',e=>{
     case 'qa-custom-log': logCustom(); break;
     case 'qa-custom-close': closeCustom(); break;
     case 'undo': undo(); break;
+    case 'change-user': switchRequested=true; if(route()!=='live') location.hash='#live'; else render(); setTimeout(()=>{ const i=$('#who-name'); if(i){ i.focus(); i.select(); } },60); break;
+    case 'cancel-user': switchRequested=false; render(); break;
     case 'clear-demo': clearDemo(false); break;
     case 'load-demo': loadDemo(); break;
     case 'toggle-recs': showAllRecs=!showAllRecs; render(); break;
@@ -1437,6 +1490,7 @@ function doImport(){
 document.addEventListener('submit',e=>{
   const f=e.target.closest('[data-form]'); if(!f) return; e.preventDefault();
   const kind=f.dataset.form;
+  if(kind==='who'){ switchUser($('#who-name').value); return; }
   if(kind==='sync'){ syncBalance(parseAmount($('#sync-bal').value)); }
   else if(kind==='goal'){ const name=$('#goal-name').value.trim(), target=parseAmount($('#goal-target').value); if(!name||!(target>0)){ toast('Give the goal a name and a target'); return; } DATA.goals.push({id:uid(),name,target:Math.round(target),created:new Date().toISOString()}); commit(); toast('Goal added'); }
   else if(kind==='edit'){ const b=DATA.bets.find(x=>x.id===f.dataset.id); if(!b) return; const w=parseAmount($('#e-wager').value), n=parseFloat(String($('#e-net').value).replace(/,/g,'')), ts=new Date($('#e-ts').value);
@@ -1456,6 +1510,7 @@ document.addEventListener('change',e=>{
   if(t.id==='s-cur'){ S.currencyName=t.value.trim()||'points'; commit(); return; }
   if(t.id==='s-theme'){ S.theme=t.value; commit(); return; }
   if(t.id && t.id.startsWith('t-')){ const k=t.id.slice(2); const v=+t.value; if(isFinite(v)) S.thresholds[k]=v; commit(); return; }
+  if(t.id==='p-user'){ if(t.value.trim() && t.value.trim().toLowerCase()!==String(S.chatParser.username).toLowerCase()) switchUser(t.value); return; }
   const pmap={'p-user':'username','p-bots':'bots','p-game':'defaultGame','p-result':'resultRegex','p-cmds':'commandGames','p-winamt':'winAmount'};
   if(pmap[t.id]){ S.chatParser[pmap[t.id]]= t.tagName==='INPUT'? t.value.trim() : t.value; commit(); return; }
   if(t.dataset.gname!=null){ const i=+t.dataset.gname, old=S.games[i], nn=t.value.trim(); if(!nn||nn===old) return; if(S.games.includes(nn)){ toast('That game already exists'); render(); return; } S.games[i]=nn; S.gamePresets[nn]=S.gamePresets[old]||{mult:2,p:.45}; delete S.gamePresets[old]; DATA.bets.forEach(b=>{ if(b.game===old) b.game=nn; }); if(S.chatParser.defaultGame===old) S.chatParser.defaultGame=nn; commit(); return; }
@@ -1492,6 +1547,7 @@ window.addEventListener('storage',e=>{ if(e.key===LS_KEY && e.newValue){ try{ DA
 setInterval(()=>{ const s=openSession(); if(s){ const before=!!openSession(); activeSession(Date.now()); if(before && !openSession()){ commit(); return; } } renderSessionPill(getAgg()); renderCapture(); },15000);
 if(openSession()){ activeSession(Date.now()); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; }
 render();
+if(DATA.settings.chatParser.username) pollFeed();
 </script>
 </body>
 </html>
