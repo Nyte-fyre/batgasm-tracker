@@ -482,8 +482,9 @@ function oddsBoard(rolls){
     avgMult, multN:known.length, multGroups, ev: n? winRate*avgMult-1 : null, theoEv: theoP!=null? theoP*avgMult-1 : null, rolled:withRoll.length};
 }
 /** Latest known balance per chatter (from "now has N"), plus each chatter's net since a timestamp. */
-function chatBoard(rolls,me,sinceIso,avgMult){
+function chatBoard(rolls,me,sinceIso,avgMult,balances=[]){
   const latest={}, netSince={};
+  for(const b of balances){ const u=b.user.toLowerCase(); if(!latest[u]||b.ts>=latest[u].ts) latest[u]={user:b.user,total:b.total,ts:b.ts}; }
   for(const r of rolls){ const u=r.user.toLowerCase(); if(r.total!=null && (!latest[u]||r.ts>=latest[u].ts)) latest[u]={user:r.user,total:r.total,ts:r.ts};
     if(sinceIso && r.ts>=+new Date(sinceIso)){ const w=r.wager>0? r.wager : (r.won? r.amount/(avgMult||2) : r.amount); const nt= r.won? r.amount-w : -r.amount; netSince[u]=netSince[u]||{user:r.user,net:0,n:0}; netSince[u].net+=nt; netSince[u].n++; } }
   const rich=Object.values(latest).sort((a,b)=>b.total-a.total);
@@ -569,6 +570,10 @@ function parseEvent(ev,cfg,compiled){
       const kind=/^(won|wins|win)$/i.test(g.kind||'')?'won':/^(lost|loses|lose)$/i.test(g.kind||'')?'lost':null;
       if(!kind||!g.user) continue; const amount=parseAmount(g.amount); if(!(amount>=0)) continue;
       return {type:'result',user:g.user.replace(/^@/,''),kind,amount,total:g.total!=null?parseAmount(g.total):null,roll:g.roll!=null?+g.roll:null}; }
+    const top=text.match(/Top Points:\s*(.+)$/i);
+    if(top){ const list=[...top[1].matchAll(/(\d+)\.\s*@?(\w+)\s*\(([\d,]+)\)/g)].map(m=>({rank:+m[1],user:m[2],total:parseAmount(m[3])})); if(list.length) return {type:'top',list}; }
+    const pts=text.match(/^@?(\w+),? you have ([\d,]+) [\w-]+/i);
+    if(pts) return {type:'points',user:pts[1],total:parseAmount(pts[2])};
     if(author) return null;
   }
   const cm=text.match(/^!(\w+)(?:\s+(\S+))?/); if(cm&&author) return {type:'cmd',user:author,cmd:cm[1].toLowerCase(),arg:cm[2]||''};
@@ -587,11 +592,17 @@ function linesToEvents(text){
  */
 function planIngest(events,ctx){
   const cfg=ctx.cfg, me=String(cfg.username||'').toLowerCase(), compiled=compileRegexList(cfg.resultRegex), cmdGame=parseCmdMap(cfg.commandGames);
-  const seen=new Set(ctx.seenKeys||[]), pending={...(ctx.pending||{})}, out={entries:[],chat:[],keys:[],rows:[],pending:null,balance:0};
+  const seen=new Set(ctx.seenKeys||[]), pending={...(ctx.pending||{})}, out={entries:[],chat:[],balances:[],keys:[],rows:[],pending:null,balance:0};
   let bal=ctx.balance||0;
   for(const ev of [...events].sort((a,b)=>a.ts-b.ts)){
     const p=parseEvent(ev,cfg,compiled);
     if(!p){ out.rows.push({ev,status:'skip',reason:'not a gamble line'}); continue; }
+    if(p.type==='top'){ const k='top|'+p.list.map(x=>x.user+x.total).join(','); if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
+      p.list.forEach(x=>out.balances.push({ts:ev.ts,user:x.user,total:x.total,rank:x.rank,src:'top'})); out.rows.push({ev,status:'top',n:p.list.length}); continue; }
+    if(p.type==='points'){ const k='pts|'+p.user.toLowerCase()+'|'+p.total; if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
+      out.balances.push({ts:ev.ts,user:p.user,total:p.total,src:'points'});
+      if(p.user.toLowerCase()===me && p.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:p.total-bal,first:bal===0,note: bal===0?`Starting balance from !points (${fmt(p.total)})`:`Synced from !points (${fmt(p.total)})`}); bal=p.total; }
+      out.rows.push({ev,status:'points',user:p.user,total:p.total}); continue; }
     const u=p.user.toLowerCase();
     if(p.type==='cmd'){ if(cmdGame[p.cmd]){ pending[u]={cmd:p.cmd,arg:p.arg,ts:ev.ts}; out.rows.push({ev,status:'cmd',user:p.user,game:cmdGame[p.cmd]}); } else out.rows.push({ev,status:'skip',reason:`!${p.cmd} is not a betting command`}); continue; }
     const key=[u,p.roll,p.kind,p.amount,p.total].join('|');
@@ -684,7 +695,7 @@ function defaultSettings(){ return {startingBalance:0,currencyName:'Bat-Coins',s
   games:[...DEFAULT_GAMES], gamePresets:JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
   chatParser:{enabled:true,username:'SireBlade',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
   thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, theme:'dark'}; }
-function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
+function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[],balances:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
 function migrate(d){
   const base=emptyData(); if(!d||typeof d!=='object') return base;
   const s={...base.settings,...(d.settings||{})};
@@ -694,7 +705,7 @@ function migrate(d){
   s.gamePresets={...base.settings.gamePresets,...(s.gamePresets||{})};
   if(!Array.isArray(s.games)||!s.games.length) s.games=[...DEFAULT_GAMES];
   return {settings:s,sessions:Array.isArray(d.sessions)?d.sessions:[],bets:Array.isArray(d.bets)?d.bets:[],goals:Array.isArray(d.goals)?d.goals:[],
-    chat:{rolls:Array.isArray(d.chat?.rolls)?d.chat.rolls:[]}, meta:{seenKeys:[],evIds:[],pending:{},...(d.meta||{}),initialized:true}};
+    chat:{rolls:Array.isArray(d.chat?.rolls)?d.chat.rolls:[],balances:Array.isArray(d.chat?.balances)?d.chat.balances:[]}, meta:{seenKeys:[],evIds:[],pending:{},...(d.meta||{}),initialized:true}};
 }
 let storageOK=true;
 function loadData(){ try{ const raw=localStorage.getItem(LS_KEY); if(raw) return migrate(JSON.parse(raw)); }catch(e){ storageOK=false; } return null; }
@@ -796,6 +807,7 @@ function ingestEvents(events,{source='live'}={}){
   let plan=planIngest(events,ctx());
   if(plan.entries.length && hasDemo()){ clearDemo(true); plan=planIngest(events,ctx()); }
   DATA.chat.rolls.push(...plan.chat.map(r=>({...r}))); if(DATA.chat.rolls.length>20000) DATA.chat.rolls.splice(0,DATA.chat.rolls.length-20000);
+  DATA.chat.balances.push(...plan.balances); if(DATA.chat.balances.length>5000) DATA.chat.balances.splice(0,DATA.chat.balances.length-5000);
   DATA.meta.seenKeys=[...DATA.meta.seenKeys,...plan.keys].slice(-6000);
   DATA.meta.pending=plan.pending;
   let bal=getAgg().balance; const added=[];
@@ -978,7 +990,7 @@ function capBlock(){
 function viewLive(agg){
   const S=DATA.settings, cs=agg.currentSession, ls=agg.lastSession, sref=cs||ls, od=getOdds();
   const {tilt,recs}=getRecs(agg);
-  const board=chatBoard(DATA.chat.rolls,S.chatParser.username,sref?.start,od.avgMult);
+  const board=chatBoard(DATA.chat.rolls,S.chatParser.username,sref?.start,od.avgMult,DATA.chat.balances);
   const feed=[...DATA.bets].filter(b=>!isAdj(b)).slice(-10).reverse();
   const sessPct= sref&&sref.startBalance>0? sref.net/sref.startBalance : 0;
   const streak= agg.curType? `${agg.curType}${agg.curStreak}` : '—';
@@ -1007,7 +1019,7 @@ function viewLive(agg){
   </section>
   <section class="panel s4"><div class="panel-h"><h2>Chat rich list</h2><span class="muted small">${board.players} seen${board.myRank?` · you’re #${board.myRank}`:''}</span></div>
     ${board.rich.length?`<div class="rich">${board.rich.slice(0,8).map((p,i)=>`<div class="${p.user.toLowerCase()===S.chatParser.username.toLowerCase()?'me':''}"><span class="rk">#${i+1}</span><span class="nm">${esc(p.user)}</span><span class="num">${money(p.total)}</span></div>`).join('')}${meRow?`<div class="me"><span class="rk">#${board.myRank}</span><span class="nm">${esc(meRow.user)}</span><span class="num">${money(meRow.total)}</span></div>`:''}</div>
-      <div class="small muted">Balances from the bot’s "now has" replies. Only people who gambled while you watched.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
+      <div class="small muted">Latest balance from any bot reply seen while you watched: !gamble results, !points and !top.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
   </section></div>`;
 }
 
@@ -1149,7 +1161,7 @@ function viewLog(agg){
     <p class="muted small" style="margin:0">Paste lines like <span class="mono">Streamlabs: Rolled 68, @SireBlade won 20000000 Bat-Coins and now has 160009800 Bat-Coins</span>. Your own <span class="mono">!gamble</span> lines help pair the exact wager. Duplicates are skipped.</p>
     <textarea id="chat-paste" rows="5" placeholder="SireBlade: !gamble 10000000&#10;Streamlabs: Rolled 23, @SireBlade lost 10000000 Bat-Coins and now has 150009600 Bat-Coins">${esc(pasteText)}</textarea>
     <div class="row"><button class="btn" type="button" data-act="parse">Preview</button>${parsed&&(mine.length||chatN)?`<button class="btn primary" type="button" data-act="import-parsed">Import ${mine.length} of your bets${chatN?` + ${chatN} chat rolls`:''}</button>`:''}${parsed?`<button class="btn ghost" type="button" data-act="clear-parsed">Clear</button>`:''}</div>
-    ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
+    ${parsed?`<div>${parsed.rows.map(r=>`<div class="prow">${r.status==='mine'?`<span><b>Your bet</b> · ${esc(r.game)} · roll ${r.roll??'—'} · wager <span class="num">${money(r.wager)}</span> · <span class="num ${cls(r.net)}">${money(r.net,true)}</span>${r.total!=null?` · now ${money(r.total)}`:''}</span>`:r.status==='chat'?`<span class="muted">Chat roll · ${esc(r.user)} ${r.won?'won':'lost'} ${money(r.amount)}</span>`:r.status==='cmd'?`<span class="muted">Command from ${esc(r.user)} (used to pair the wager)</span>`:r.status==='top'?`<span class="muted">!top list · ${r.n} balances</span>`:r.status==='points'?`<span class="muted">!points · ${esc(r.user)} has ${money(r.total)}</span>`:`<span class="muted">Skipped: ${esc(r.reason)}</span>`}<span class="line">${esc(r.ev.raw||r.ev.text)}</span></div>`).join('')}</div>`:''}
   </section>
   <section class="panel s12" aria-labelledby="h-bets">
     <div class="panel-h"><h2 id="h-bets">All entries</h2>
