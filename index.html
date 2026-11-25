@@ -333,12 +333,14 @@ ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;f
    PURE CALCULATIONS  (window.BatCalc exposes these for testing)
    ================================================================== */
 const APP_VERSION='2.0.0';
-const DEFAULT_GAMES = ["Gamble","Duel","Heist","Other"];
-const DEFAULT_PRESETS = {"Gamble":{mult:2,p:.4},"Duel":{mult:2,p:.5},"Heist":{mult:2,p:.4},"Other":{mult:2,p:.45}};
+const DEFAULT_GAMES = ["Gamble","Slots","Duel","Heist","Other"];
+const DEFAULT_PRESETS = {"Gamble":{mult:2,p:.4},"Slots":{mult:2,p:.3},"Duel":{mult:2,p:.5},"Heist":{mult:2,p:.4},"Other":{mult:2,p:.45}};
+const SLOTS_LINE = String.raw`^@?(?<user>\w+) you got .*?and (?<kind>won|lost) (?:your )?(?<amount>[\d,]+) [\w-]+ => Slots`;
 const DEF_RESULT = [
   String.raw`Rolled (?<roll>\d+), @?(?<user>\w+) (?<kind>won|lost) (?<amount>[\d,]+) [\w-]+ and now has (?<total>[\d,]+)`,
   String.raw`@?(?<user>\w+) rolled (?<roll>\d+) and (?<kind>won|lost) (?<amount>[\d,]+) [\w-]+ and now has (?<total>[\d,]+)`,
-  String.raw`@?(?<user>\w+) (?<kind>won|lost) (?<amount>[\d,]+)`
+  SLOTS_LINE,
+  String.raw`^@?(?<user>\w+) (?<kind>won|lost) (?<amount>[\d,]+) [\w-]+$`
 ].join('\n');
 const DEF_CMDMAP = 'gamble = Gamble\nduel = Duel\nheist = Heist';
 const DEFAULT_THRESH = {chaseMult:2,tiltLossStreak:3,hotMinBets:30,coldRoi:-15,badHourMinBets:20,badHourGap:15,winStreakWarn:5,lowBankrollMult:10,allInPct:50,sessionGapHours:3};
@@ -559,17 +561,20 @@ function goalProbability({start,target,floor,bet,outcomes,runs=1000,maxBets=2000
 }
 
 /* ---------- chat parsing ---------- */
-function compileRegexList(src){ const out=[], errors=[]; String(src||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(p=>{ try{out.push(new RegExp(p,'i'));}catch(e){errors.push(p+' → '+e.message);} }); return {list:out,errors}; }
+/** One regex per line; an optional " => Game" suffix names the game that line belongs to. */
+function compileRegexList(src){ const out=[], errors=[]; String(src||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(p=>{ const mm=p.match(/^(.*?)\s+=>\s*(.+)$/); const pat=mm?mm[1]:p; try{ const re=new RegExp(pat,'i'); if(mm) re.game=mm[2].trim(); out.push(re);}catch(e){errors.push(p+' → '+e.message);} }); return {list:out,errors}; }
 function parseCmdMap(src){ const m={}; String(src||'').split('\n').forEach(l=>{ const [k,v]=l.split('=').map(s=>(s||'').trim()); if(k&&v) m[k.replace(/^!/,'').toLowerCase()]=v; }); return m; }
 /** One chat message → {type:'result'|'cmd', ...} or null. */
 function parseEvent(ev,cfg,compiled){
   const author=String(ev.author||'').trim(), text=String(ev.text||'').trim();
   const bots=String(cfg.bots||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
   if(!author || bots.includes(author.toLowerCase())){
+    const duel=text.match(/^@?(\w+) won the duel vs @?(\w+) and won ([\d,]+)/i);
+    if(duel) return {type:'duel',winner:duel[1],loser:duel[2],amount:parseAmount(duel[3])};
     for(const re of (compiled||compileRegexList(cfg.resultRegex)).list){ const m=text.match(re); if(!m||!m.groups) continue; const g=m.groups;
       const kind=/^(won|wins|win)$/i.test(g.kind||'')?'won':/^(lost|loses|lose)$/i.test(g.kind||'')?'lost':null;
       if(!kind||!g.user) continue; const amount=parseAmount(g.amount); if(!(amount>=0)) continue;
-      return {type:'result',user:g.user.replace(/^@/,''),kind,amount,total:g.total!=null?parseAmount(g.total):null,roll:g.roll!=null?+g.roll:null}; }
+      return {type:'result',user:g.user.replace(/^@/,''),kind,amount,total:g.total!=null?parseAmount(g.total):null,roll:g.roll!=null?+g.roll:null,game:re.game||null}; }
     const top=text.match(/Top Points:\s*(.+)$/i);
     if(top){ const list=[...top[1].matchAll(/(\d+)\.\s*@?(\w+)\s*\(([\d,]+)\)/g)].map(m=>({rank:+m[1],user:m[2],total:parseAmount(m[3])})); if(list.length) return {type:'top',list}; }
     const pts=text.match(/^@?(\w+),? you have ([\d,]+) [\w-]+/i);
@@ -593,23 +598,30 @@ function linesToEvents(text){
 function planIngest(events,ctx){
   const cfg=ctx.cfg, me=String(cfg.username||'').toLowerCase(), compiled=compileRegexList(cfg.resultRegex), cmdGame=parseCmdMap(cfg.commandGames);
   const seen=new Set(ctx.seenKeys||[]), pending={...(ctx.pending||{})}, out={entries:[],chat:[],balances:[],keys:[],rows:[],pending:null,balance:0};
-  let bal=ctx.balance||0;
+  let bal=ctx.balance||0; let started=!!ctx.hasEntries;
   for(const ev of [...events].sort((a,b)=>a.ts-b.ts)){
+    if(out.entries.length) started=true;
     const p=parseEvent(ev,cfg,compiled);
     if(!p){ out.rows.push({ev,status:'skip',reason:'not a gamble line'}); continue; }
     if(p.type==='top'){ const k='top|'+p.list.map(x=>x.user+x.total).join(','); if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
-      p.list.forEach(x=>out.balances.push({ts:ev.ts,user:x.user,total:x.total,rank:x.rank,src:'top'})); out.rows.push({ev,status:'top',n:p.list.length}); continue; }
+      p.list.forEach(x=>out.balances.push({ts:ev.ts,user:x.user,total:x.total,rank:x.rank,src:'top'}));
+      { const mine=p.list.find(x=>x.user.toLowerCase()===me); if(mine && mine.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:mine.total-bal,first:!started,note:`Synced from !top (${fmt(mine.total)})`}); bal=mine.total; } } out.rows.push({ev,status:'top',n:p.list.length}); continue; }
     if(p.type==='points'){ const k='pts|'+p.user.toLowerCase()+'|'+p.total; if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
       out.balances.push({ts:ev.ts,user:p.user,total:p.total,src:'points'});
-      if(p.user.toLowerCase()===me && p.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:p.total-bal,first:bal===0,note: bal===0?`Starting balance from !coins (${fmt(p.total)})`:`Synced from !coins (${fmt(p.total)})`}); bal=p.total; }
+      if(p.user.toLowerCase()===me && p.total!==bal){ out.entries.push({kind:'adj',ts:ev.ts,net:p.total-bal,first:!started,note: !started?`Starting balance from !coins (${fmt(p.total)})`:`Synced from !coins (${fmt(p.total)})`}); bal=p.total; }
       out.rows.push({ev,status:'points',user:p.user,total:p.total}); continue; }
+    if(p.type==='duel'){ const k=['duel',p.winner,p.loser,p.amount,Math.floor(ev.ts/6e4)].join('|').toLowerCase(); if(seen.has(k)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; } seen.add(k); out.keys.push(k);
+      const iw=p.winner.toLowerCase()===me, il=p.loser.toLowerCase()===me;
+      if(iw||il){ const net=iw? p.amount : -p.amount; out.entries.push({kind:'bet',ts:ev.ts,game:'Duel',wager:p.amount,net,roll:null,allIn:false,cmd:`duel vs ${iw?p.loser:p.winner}`,total:null}); bal+=net; out.rows.push({ev,status:'mine',user:me,won:iw,amount:p.amount,wager:p.amount,net,roll:null,total:null,game:'Duel'}); }
+      else out.rows.push({ev,status:'skip',reason:'duel between other people'});
+      continue; }
     const u=p.user.toLowerCase();
     if(p.type==='cmd'){ if(cmdGame[p.cmd]){ pending[u]={cmd:p.cmd,arg:p.arg,ts:ev.ts}; out.rows.push({ev,status:'cmd',user:p.user,game:cmdGame[p.cmd]}); } else out.rows.push({ev,status:'skip',reason:`!${p.cmd} is not a betting command`}); continue; }
-    const key=[u,p.roll,p.kind,p.amount,p.total].join('|');
+    const key=[u,p.roll,p.kind,p.amount,p.total,p.total==null?Math.floor(ev.ts/6e4):''].join('|');
     if(seen.has(key)){ out.rows.push({ev,status:'skip',reason:'already logged'}); continue; }
     seen.add(key); out.keys.push(key);
     const pd= pending[u] && ev.ts-pending[u].ts<=120000 && ev.ts>=pending[u].ts ? pending[u] : null; if(pd) delete pending[u];
-    const game= pd? cmdGame[pd.cmd] : (cfg.defaultGame||'Gamble');
+    const game= pd? cmdGame[pd.cmd] : (p.game||cfg.defaultGame||'Gamble');
     const mult=(ctx.presets?.[game]?.mult)||2, payoutMode=cfg.winAmount!=='profit';
     const allIn= !!pd && /^all$/i.test(pd.arg);
     let known=null; if(pd && !allIn){ if(/%$/.test(pd.arg)){ if(u===me) known=Math.round(bal*parseFloat(pd.arg)/100); } else { const a=parseAmount(pd.arg); if(a>0) known=a; } }
@@ -619,7 +631,7 @@ function planIngest(events,ctx){
     else { wager= known ?? Math.round(p.amount/Math.max(.01,mult-1)); net=p.amount; }
     out.chat.push({ts:ev.ts,user:p.user,roll:p.roll,won,amount:p.amount,total:p.total,wager:(!won||known)? wager : null,game});
     if(u===me){
-      if(p.total!=null){ const implied=p.total-net; if(implied!==bal){ out.entries.push({kind:'adj',ts:ev.ts-1,net:implied-bal,first:bal===0,note: bal===0?`Starting balance from chat (${fmt(implied)})`:`Balance change between bets (passive points, rewards, other games)`}); bal=implied; } }
+      if(p.total!=null){ const implied=p.total-net; if(implied!==bal){ out.entries.push({kind:'adj',ts:ev.ts-1,net:implied-bal,first:!started,note: !started?`Starting balance from chat (${fmt(implied)})`:`Balance change between bets (passive points, rewards, other games)`}); bal=implied; } }
       out.entries.push({kind:'bet',ts:ev.ts,game,wager,net,roll:p.roll,allIn,cmd: pd? `!${pd.cmd} ${pd.arg}` : '',total:p.total});
       bal+=net;
     }
@@ -700,7 +712,8 @@ function migrate(d){
   const base=emptyData(); if(!d||typeof d!=='object') return base;
   const s={...base.settings,...(d.settings||{})};
   s.chatParser={...base.settings.chatParser,...(s.chatParser||{})};
-  if(!s.chatParser.resultRegex) s.chatParser.resultRegex=DEF_RESULT;
+  if(!s.chatParser.resultRegex || (!/you got/.test(s.chatParser.resultRegex) && /^Rolled \(\?<roll>/.test(s.chatParser.resultRegex))) s.chatParser.resultRegex=DEF_RESULT;
+  if(Array.isArray(s.games) && !s.games.includes('Slots')) s.games.splice(1,0,'Slots');
   s.thresholds={...DEFAULT_THRESH,...(s.thresholds||{})};
   s.gamePresets={...base.settings.gamePresets,...(s.gamePresets||{})};
   if(!Array.isArray(s.games)||!s.games.length) s.games=[...DEFAULT_GAMES];
@@ -715,7 +728,7 @@ let DATA = loadData();
 let VER=0, AGG=null, AGG_VER=-1, ODDS=null, ODDS_VER=-1;
 const MC_CACHE={};
 function getAgg(){ if(AGG_VER!==VER){ AGG=summarize(DATA); AGG_VER=VER; } return AGG; }
-function getOdds(){ if(ODDS_VER!==VER){ ODDS=oddsBoard(DATA.chat.rolls); ODDS._rolls=DATA.chat.rolls; ODDS_VER=VER; } return ODDS; }
+function getOdds(){ if(ODDS_VER!==VER){ const g=DATA.chat.rolls.filter(r=>r.roll!=null); ODDS=oddsBoard(g); ODDS._rolls=g; ODDS_VER=VER; } return ODDS; }
 function commit(opts={}){ DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; for(const k in MC_CACHE) delete MC_CACHE[k]; saveData(); if(!opts.silent) render(); }
 
 /* ---------- demo data ---------- */
@@ -803,7 +816,7 @@ function flashBalance(net){ const el=$('#hdr-bal'); el.classList.remove('flash-w
 let FRESH=new Set();
 function ingestEvents(events,{source='live'}={}){
   const S=DATA.settings;
-  const ctx=()=>({cfg:S.chatParser,presets:S.gamePresets,balance:getAgg().balance,seenKeys:DATA.meta.seenKeys,pending:DATA.meta.pending});
+  const ctx=()=>({cfg:S.chatParser,presets:S.gamePresets,balance:getAgg().balance,hasEntries:DATA.bets.length>0,seenKeys:DATA.meta.seenKeys,pending:DATA.meta.pending});
   let plan=planIngest(events,ctx());
   if(plan.entries.length && hasDemo()){ clearDemo(true); plan=planIngest(events,ctx()); }
   DATA.chat.rolls.push(...plan.chat.map(r=>({...r}))); if(DATA.chat.rolls.length>20000) DATA.chat.rolls.splice(0,DATA.chat.rolls.length-20000);
@@ -838,6 +851,29 @@ window.addEventListener('message',e=>{
     window.postMessage({source:'batgasm-tracker',type:'ack',ids:d.events.map(x=>x&&x.id).filter(Boolean)},'*');
     renderCapture();
   }
+});
+/**
+ * Backfill from the Streamlabs message history (mod viewer card), sent by a Twitch tab that opened this page.
+ * Auto-captured data from the backfill window onward is rebuilt from the log, so the timeline stays in order.
+ */
+function runBackfill(events){
+  if(!events.length) return null;
+  if(hasDemo()) clearDemo(true);
+  const from=Math.min(...events.map(x=>x.ts));
+  DATA.bets=DATA.bets.filter(b=>!(b.tags||[]).includes('auto') || +new Date(b.ts)<from);
+  DATA.chat.rolls=DATA.chat.rolls.filter(r=>r.ts<from); DATA.chat.balances=DATA.chat.balances.filter(r=>r.ts<from);
+  DATA.sessions=DATA.sessions.filter(s=>DATA.bets.some(b=>b.sessionId===s.id));
+  DATA.meta.seenKeys=[]; DATA.meta.pending={};
+  DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++;
+  const plan=ingestEvents(events,{source:'backfill'});
+  return {mine:plan.entries.filter(e=>e.kind==='bet').length, rolls:plan.chat.length, balances:plan.balances.length};
+}
+window.addEventListener('message',e=>{
+  if(e.origin!=='https://www.twitch.tv') return; const d=e.data;
+  if(!d||d.source!=='batgasm-backfill'||!Array.isArray(d.events)) return;
+  const res=runBackfill(d.events.filter(x=>x&&typeof x.text==='string'&&isFinite(x.ts)).map(x=>({id:String(x.id||''),ts:+x.ts,author:'Streamlabs',text:x.text})));
+  try{ e.source.postMessage({source:'batgasm-tracker',type:'backfill-done',result:res},e.origin); }catch(err){}
+  if(res) toast(`Imported Streamlabs history: ${res.mine} of your bets, ${fmt(res.rolls)} chat rolls`);
 });
 function captureState(){
   const st=BRIDGE.status, now=Date.now();
