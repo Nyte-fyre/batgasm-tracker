@@ -842,13 +842,13 @@ function ingestEvents(events,{source='live'}={}){
 /* ---------- userscript bridge ---------- */
 const BRIDGE={present:false,status:null,version:null,lastEvent:0};
 window.addEventListener('message',e=>{
-  if(e.source!==window) return; const d=e.data; if(!d||d.source!=='batgasm-capture') return;
+  if(e.origin!==location.origin) return; const d=e.data; if(!d||d.source!=='batgasm-capture') return;
   BRIDGE.present=true; if(d.version) BRIDGE.version=d.version;
   if(d.type==='status'){ BRIDGE.status=d.status||null; renderCapture(); }
   if(d.type==='events' && Array.isArray(d.events)){
     const seenIds=new Set(DATA.meta.evIds||[]); const fresh=d.events.filter(ev=>ev&&ev.id&&!seenIds.has(ev.id));
     if(fresh.length){ DATA.meta.evIds=[...(DATA.meta.evIds||[]),...fresh.map(x=>x.id)].slice(-4000); BRIDGE.lastEvent=Date.now(); ingestEvents(fresh,{source:'live'}); }
-    window.postMessage({source:'batgasm-tracker',type:'ack',ids:d.events.map(x=>x&&x.id).filter(Boolean)},'*');
+    window.postMessage({source:'batgasm-tracker',type:'ack',ids:d.events.map(x=>x&&x.id).filter(Boolean)},location.origin);
     renderCapture();
   }
 });
@@ -877,13 +877,16 @@ window.addEventListener('message',e=>{
 });
 function captureState(){
   const st=BRIDGE.status, now=Date.now();
-  if(!BRIDGE.present) return {cls:'',text:'Auto-capture off',tip:'Install the userscript in Settings'};
+  if(!BRIDGE.present) return document.documentElement.hasAttribute('data-batgasm-capture')
+    ? {cls:'wait',text:'Script found, not talking',tip:'The capture script runs here but sent nothing yet. Reload this page'}
+    : {cls:'',text:'Auto-capture off',tip:'Capture script not running on this page. Check Tampermonkey: script enabled, Allow User Scripts on, then reload'};
   if(!st || now-st.ts>100000) return {cls:'wait',text:'Open Twitch chat',tip:'Userscript is installed. Open twitch.tv/popout/batgasm/chat'};
   if(!st.onChannel) return {cls:'wait',text:'Twitch open, not on Batgasm',tip:'Switch the Twitch tab to batgasm'};
   return {cls:'ok pulse',text:'Capturing #batgasm',tip: st.lastMsg? `Last bot or bet message ${ago(now-st.lastMsg)}` : 'Waiting for the first !gamble'};
 }
 function renderCapture(){ const c=captureState(), p=$('#cap-pill'); p.className='pill '+c.cls; $('#cap-text').textContent=c.text; p.title=c.tip; const lv=$('#live-cap'); if(lv) lv.innerHTML=capBlock(); }
-window.postMessage({source:'batgasm-tracker',type:'hello',version:APP_VERSION},'*');
+const sayHello=()=>window.postMessage({source:'batgasm-tracker',type:'hello',version:APP_VERSION},location.origin);
+sayHello(); [1000,3000,6000].forEach(t=>setTimeout(()=>{ if(!BRIDGE.present){ sayHello(); renderCapture(); } },t));
 
 /* ==================================================================
    UI HELPERS
