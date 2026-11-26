@@ -117,6 +117,12 @@ main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px
 .hero .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
 .hero .v{font-family:var(--f-display);font-size:clamp(30px,4.2vw,44px);font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .hero .d{font-size:12.5px;color:var(--muted)}
+.heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.cd{font-variant-numeric:tabular-nums}
+.cd.wait{color:var(--loss)} .cd.soon{color:var(--warn)} .cd.ready{color:var(--win)}
+.hcd{display:flex;flex-direction:column;align-items:flex-end}
+.hcd .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.hcd .val{font-family:var(--f-mono);font-size:22px;font-weight:600;line-height:1.1}
 .hero.accent{background:linear-gradient(160deg,var(--accent-soft),var(--surface) 70%);border-color:var(--accent)}
 .feed{display:flex;flex-direction:column}
 .fi{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
@@ -286,6 +292,10 @@ ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;f
       <a id="cap-pill" class="pill" href="#setup"><span class="dot"></span><span id="cap-text">Auto-capture off</span></a>
       <span id="sess-pill" class="pill"><span class="dot"></span><span id="sess-text">No session</span></span>
       <button id="sess-btn" class="btn sm" type="button">Start session</button>
+    </div>
+    <div class="hcd" title="Time until the next !gamble is allowed (cooldown after the last gamble)">
+      <span class="lbl">Next !gamble</span>
+      <span class="val cd ready" data-cd>Ready</span>
     </div>
     <div class="hbal">
       <span class="lbl" id="bal-lbl">Balance</span>
@@ -712,7 +722,7 @@ const uid=()=> (window.crypto&&crypto.randomUUID)? crypto.randomUUID() : Date.no
 function defaultSettings(){ return {startingBalance:0,currencyName:'Bat-Coins',stopLossPct:20,takeProfitPct:30,maxBetPctOfBankroll:5,
   games:[...DEFAULT_GAMES], gamePresets:JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
   chatParser:{enabled:true,username:'',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
-  thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, theme:'dark'}; }
+  thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, gambleCooldownMin:10, theme:'dark'}; }
 function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[],balances:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
 function migrate(d){
   const base=emptyData(); if(!d||typeof d!=='object') return base;
@@ -1044,7 +1054,7 @@ function render(){
   else if(r==='log'){ v.innerHTML=viewLog(agg); }
   else if(r==='strategies'){ v.innerHTML=viewStrategies(agg); drawStrategyCharts(); }
   else { v.innerHTML=viewSettings(agg); }
-  updateHint(); measure();
+  updateHint(); measure(); tickCooldown();
 }
 function renderSessionPill(agg){
   const s=agg.currentSession, pill=$('#sess-pill');
@@ -1091,10 +1101,13 @@ function viewLive(agg){
   const cells=od.cells.map((c,i)=>{ const t=c.w+c.l; const col= !t?'':c.w&&!c.l?'var(--win)':c.l&&!c.w?'var(--loss)':'var(--warn)'; return `<span style="${t?`background:${col};opacity:${clamp(.35+t/6,.35,1)}`:''}" data-tip="Roll ${i+1}<br>${t?`${c.w} win · ${c.l} loss`:'not seen yet'}"></span>`; }).join('');
   return `<div class="grid">${(!S.chatParser.username||switchRequested)?onboardBlock():''}
   <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
-  <div class="hero accent s3"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
-  <div class="hero s3"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
-  <div class="hero s3"><span class="k">Win rate ${cs?'this session':sref?'last session':''}</span><span class="v">${sref&&sref.n?pct(sref.winRate,0):'—'}</span><span class="d">all time ${pct(agg.winRate,1)} over ${fmt(agg.totalBets)} bets</span></div>
-  <div class="hero s3"><span class="k">Streak · tilt</span><span class="v ${agg.curType==='W'?'pos':agg.curType==='L'?'neg':''}">${streak} <span style="font-size:.5em;color:${tilt.score>=60?'var(--loss)':tilt.score>=35?'var(--warn)':'var(--muted)'}">tilt ${tilt.score}</span></span><span class="d">best W${agg.longW} · worst L${agg.longL}</span></div>
+  <div class="s12 heroes">
+  <div class="hero"><span class="k">Next !gamble</span><span class="v cd ready" data-cd>Ready</span><span class="d" data-cd-note>${cdNote()}</span></div>
+  <div class="hero accent"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
+  <div class="hero"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
+  <div class="hero"><span class="k">Win rate ${cs?'this session':sref?'last session':''}</span><span class="v">${sref&&sref.n?pct(sref.winRate,0):'—'}</span><span class="d">all time ${pct(agg.winRate,1)} over ${fmt(agg.totalBets)} bets</span></div>
+  <div class="hero"><span class="k">Streak · tilt</span><span class="v ${agg.curType==='W'?'pos':agg.curType==='L'?'neg':''}">${streak} <span style="font-size:.5em;color:${tilt.score>=60?'var(--loss)':tilt.score>=35?'var(--warn)':'var(--muted)'}">tilt ${tilt.score}</span></span><span class="d">best W${agg.longW} · worst L${agg.longL}</span></div>
+  </div>
 
   <section class="panel s8"><div class="panel-h"><h2>${cs?'This session':'Last session'}</h2><span class="muted small">${sref?when(sref.start):''}</span></div><div id="live-chart" class="chart"></div></section>
   <section class="panel s4"><div class="panel-h"><h2>Latest bets</h2><a class="small" href="#log">All</a></div>
@@ -1403,6 +1416,7 @@ function viewSettings(agg){
       ${num('t-lowBankrollMult','Low bankroll: < N× avg bet',T.lowBankrollMult)}
       ${num('t-allInPct','All-in warning at % of balance',T.allInPct)}
       ${num('t-sessionGapHours','New session after idle hours',T.sessionGapHours)}
+      ${num('s-cd','!gamble cooldown (minutes)',S.gambleCooldownMin??10)}
     </div></section>
   <section class="panel s6"><div class="panel-h"><h2>Chat reading</h2></div>
     <div class="set-grid">
@@ -1505,7 +1519,7 @@ document.addEventListener('change',e=>{
   if(t.id==='sim-start'){ const v=parseAmount(t.value); simStart= v>0? Math.round(v) : null; simResults={}; cmpRes=null; render(); return; }
   if(t.id==='sim-bets'){ simBets=clamp(Math.round(+t.value)||100,10,2000); simResults={}; cmpRes=null; render(); return; }
   if(t.id==='cmp-a'){ cmpA=t.value; return; } if(t.id==='cmp-b'){ cmpB=t.value; return; }
-  const map={'s-start':['startingBalance','int'],'s-sl':['stopLossPct','num'],'s-tp':['takeProfitPct','num'],'s-max':['maxBetPctOfBankroll','num'],'s-passive':['passivePerHour','int'],'s-bph':['betsPerHour','num']};
+  const map={'s-start':['startingBalance','int'],'s-sl':['stopLossPct','num'],'s-tp':['takeProfitPct','num'],'s-max':['maxBetPctOfBankroll','num'],'s-passive':['passivePerHour','int'],'s-bph':['betsPerHour','num'],'s-cd':['gambleCooldownMin','num']};
   if(map[t.id]){ const [k,ty]=map[t.id]; const v=+t.value; if(isFinite(v)) S[k]= ty==='int'? Math.round(v) : v; commit(); return; }
   if(t.id==='s-cur'){ S.currencyName=t.value.trim()||'points'; commit(); return; }
   if(t.id==='s-theme'){ S.theme=t.value; commit(); return; }
@@ -1544,6 +1558,18 @@ $('#qa-game').addEventListener('change',()=>{ if(!$('#qa-custom').hidden){ const
 window.addEventListener('hashchange',()=>{ editing=null; confirmDel=null; resetArmed=false; render(); window.scrollTo(0,0); });
 let rzT=null; window.addEventListener('resize',()=>{ clearTimeout(rzT); rzT=setTimeout(()=>{ measure(); const r=route(); if(r==='stats') drawBalanceChart(getAgg(),'bal-chart',balRange); if(r==='live') drawBalanceChart(getAgg(),'live-chart','session'); if(r==='strategies') drawStrategyCharts(); },120); });
 window.addEventListener('storage',e=>{ if(e.key===LS_KEY && e.newValue){ try{ DATA=migrate(JSON.parse(e.newValue)); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; render(); }catch(err){} } });
+/* ---------- !gamble cooldown ---------- */
+function lastGambleTs(){ for(let i=DATA.bets.length-1;i>=0;i--){ const b=DATA.bets[i]; if(b.game==='Gamble' && b.wager>0) return +new Date(b.ts); } return null; }
+function cooldownState(nowMs=Date.now()){
+  const last=lastGambleTs(), cd=(+DATA.settings.gambleCooldownMin||10)*60000;
+  const left= last==null? 0 : last+cd-nowMs;
+  if(left<=0) return {text:'Ready',cls:'ready',left:0,last};
+  const m=Math.floor(left/60000), sec=Math.floor(left%60000/1000);
+  return {text:`${m}:${String(sec).padStart(2,'0')}`,cls:left<=60000?'soon':'wait',left,last};
+}
+function cdNote(){ const st=cooldownState(); const name=DATA.settings.chatParser.username||'this name'; if(st.last==null) return `no !gamble from ${esc(name)} yet`; return `last !gamble ${when(new Date(st.last).toISOString())} · ${+DATA.settings.gambleCooldownMin||10}-min cooldown`; }
+function tickCooldown(){ const st=cooldownState(); document.querySelectorAll('[data-cd]').forEach(el=>{ if(el.textContent!==st.text) el.textContent=st.text; const c='cd '+st.cls; if(!el.className.endsWith(c)) el.className=el.className.replace(/\bcd\b.*$/,'')+c; }); }
+setInterval(tickCooldown,1000);
 setInterval(()=>{ const s=openSession(); if(s){ const before=!!openSession(); activeSession(Date.now()); if(before && !openSession()){ commit(); return; } } renderSessionPill(getAgg()); renderCapture(); },15000);
 if(openSession()){ activeSession(Date.now()); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; }
 render();
