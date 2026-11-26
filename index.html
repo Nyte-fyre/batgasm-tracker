@@ -115,9 +115,12 @@ main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px
 /* LIVE hero */
 .hero{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;gap:4px;min-width:0}
 .hero .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
-.hero .v{font-family:var(--f-display);font-size:clamp(30px,4.2vw,44px);font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hero .v{font-family:var(--f-display);font-size:clamp(24px,2.7vw,38px);white-space:nowrap;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .hero .d{font-size:12.5px;color:var(--muted)}
-.heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--accent-2);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.heroes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+@media (max-width:1180px){.heroes{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:560px){.heroes{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .cd{font-variant-numeric:tabular-nums}
 .cd.wait{color:var(--loss)} .cd.soon{color:var(--warn)} .cd.ready{color:var(--win)}
 .hcd{display:flex;flex-direction:column;align-items:flex-end}
@@ -724,7 +727,7 @@ const uid=()=> (window.crypto&&crypto.randomUUID)? crypto.randomUUID() : Date.no
 function defaultSettings(){ return {startingBalance:0,currencyName:'Bat-Coins',stopLossPct:20,takeProfitPct:30,maxBetPctOfBankroll:5,
   games:[...DEFAULT_GAMES], gamePresets:JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
   chatParser:{enabled:true,username:'',bots:'Streamlabs, StreamElements, Nightbot',defaultGame:'Gamble',winAmount:'payout',resultRegex:DEF_RESULT,commandGames:DEF_CMDMAP},
-  thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, gambleCooldownMin:10, theme:'dark'}; }
+  thresholds:{...DEFAULT_THRESH}, passivePerHour:0, betsPerHour:40, gambleCooldownMin:10, suggestedBetPct:5, theme:'dark'}; }
 function emptyData(){ return {settings:defaultSettings(),sessions:[],bets:[],goals:[],chat:{rolls:[],balances:[]},meta:{initialized:true,seenKeys:[],evIds:[],pending:{}}}; }
 function migrate(d){
   const base=emptyData(); if(!d||typeof d!=='object') return base;
@@ -1103,6 +1106,16 @@ function capBlock(){
   const c=captureState();
   return `<span class="pill ${c.cls}"><span class="dot"></span>${esc(c.text)}</span> <span class="small muted">${esc(c.tip)}</span>`;
 }
+/** Suggested flat bet: a share of the current balance, rounded down to 3 significant digits. */
+function suggestedBet(agg){
+  const S=DATA.settings, p=+S.suggestedBetPct||5, bal=agg.balance;
+  if(!(bal>0)) return {amount:0,p,note:'no balance yet'};
+  const raw=bal*p/100, mag=10**Math.max(0,Math.floor(Math.log10(Math.max(1,raw)))-2), amount=Math.max(1,Math.floor(raw/mag)*mag);
+  const cs=agg.currentSession; let warn='';
+  if(cs && cs.startBalance>0 && cs.net/cs.startBalance<=-S.stopLossPct/100) warn='Stop-loss hit this stream. Consider stopping.';
+  else if(cs && cs.startBalance>0 && cs.net/cs.startBalance>=S.takeProfitPct/100) warn='Take-profit reached. Consider banking it.';
+  return {amount,p,warn};
+}
 function onboardBlock(){
   const cur=DATA.settings.chatParser.username;
   return `<section class="onboard s12" aria-labelledby="h-who"><h2 id="h-who">Whose stats do you want to see?</h2>
@@ -1123,6 +1136,7 @@ function viewLive(agg){
   <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
   <div class="s12 heroes">
   <div class="hero"><span class="k">Next !gamble</span><span class="v cd ready" data-cd>Ready</span><span class="d" data-cd-note>${cdNote()}</span></div>
+  ${(()=>{ const sb=suggestedBet(agg); return `<div class="hero"><span class="k">Suggested bet</span><span class="v" title="${fmt(sb.amount)}">${sb.amount?money(sb.amount):'—'}</span><span class="d">${sb.p}% of balance${sb.amount?` · <button type="button" class="linkbtn" data-act="copy-bet" data-v="${sb.amount}" title="Copy the command so you can paste it into chat yourself">copy !gamble ${sb.amount}</button>`:''}</span>${sb.warn?`<span class="d warnc">${esc(sb.warn)}</span>`:''}</div>`; })()}
   <div class="hero accent"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
   <div class="hero"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
   <div class="hero"><span class="k">Win rate ${cs?'this session':sref?'last session':''}</span><span class="v">${sref&&sref.n?pct(sref.winRate,0):'—'}</span><span class="d">all time ${pct(agg.winRate,1)} over ${fmt(agg.totalBets)} bets</span></div>
@@ -1422,6 +1436,7 @@ function viewSettings(agg){
       ${num('s-sl','Stop-loss % (session)',S.stopLossPct)}
       ${num('s-tp','Take-profit % (session)',S.takeProfitPct)}
       ${num('s-max','Max bet % of bankroll',S.maxBetPctOfBankroll)}
+      ${num('s-sug','Suggested bet % of balance',S.suggestedBetPct??5)}
       ${num('s-passive','Passive per hour (fallback)',S.passivePerHour)}
       ${num('s-bph','Typical bets per hour',S.betsPerHour)}
       <label class="f">Theme<select id="s-theme"><option value="dark" ${S.theme!=='light'?'selected':''}>Dark</option><option value="light" ${S.theme==='light'?'selected':''}>Light</option></select></label>
@@ -1489,6 +1504,7 @@ document.addEventListener('click',e=>{
     case 'qa-custom-log': logCustom(); break;
     case 'qa-custom-close': closeCustom(); break;
     case 'undo': undo(); break;
+    case 'copy-bet': { const txt='!gamble '+b.dataset.v; const ok=()=>toast(`Copied "${txt}". Paste it in chat yourself.`); const fail=()=>toast(`Copy didn't work. Type: ${txt}`); try{ navigator.clipboard.writeText(txt).then(ok,fail); }catch(err){ fail(); } break; }
     case 'change-user': switchRequested=true; if(route()!=='live') location.hash='#live'; else render(); setTimeout(()=>{ const i=$('#who-name'); if(i){ i.focus(); i.select(); } },60); break;
     case 'cancel-user': switchRequested=false; render(); break;
     case 'clear-demo': clearDemo(false); break;
@@ -1542,7 +1558,7 @@ document.addEventListener('change',e=>{
   if(t.id==='sim-start'){ const v=parseAmount(t.value); simStart= v>0? Math.round(v) : null; simResults={}; cmpRes=null; render(); return; }
   if(t.id==='sim-bets'){ simBets=clamp(Math.round(+t.value)||100,10,2000); simResults={}; cmpRes=null; render(); return; }
   if(t.id==='cmp-a'){ cmpA=t.value; return; } if(t.id==='cmp-b'){ cmpB=t.value; return; }
-  const map={'s-start':['startingBalance','int'],'s-sl':['stopLossPct','num'],'s-tp':['takeProfitPct','num'],'s-max':['maxBetPctOfBankroll','num'],'s-passive':['passivePerHour','int'],'s-bph':['betsPerHour','num'],'s-cd':['gambleCooldownMin','num']};
+  const map={'s-start':['startingBalance','int'],'s-sl':['stopLossPct','num'],'s-tp':['takeProfitPct','num'],'s-max':['maxBetPctOfBankroll','num'],'s-passive':['passivePerHour','int'],'s-bph':['betsPerHour','num'],'s-cd':['gambleCooldownMin','num'],'s-sug':['suggestedBetPct','num']};
   if(map[t.id]){ const [k,ty]=map[t.id]; const v=+t.value; if(isFinite(v)) S[k]= ty==='int'? Math.round(v) : v; commit(); return; }
   if(t.id==='s-cur'){ S.currencyName=t.value.trim()||'points'; commit(); return; }
   if(t.id==='s-theme'){ S.theme=t.value; commit(); return; }
