@@ -101,7 +101,7 @@ main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px
 .s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}.s7{grid-column:span 7}.s5{grid-column:span 5}.s3{grid-column:span 3}
 @media (max-width:1000px){.s8,.s4,.s6,.s7,.s5{grid-column:span 12}.s3{grid-column:span 6}}
 @media (max-width:560px){.s3{grid-column:span 12}}
-@media (min-width:1001px) and (max-width:1180px){.s4{grid-column:span 6}}
+@media (min-width:1001px) and (max-width:1180px){.s4{grid-column:span 6}.live-main{grid-column:span 7}.live-side{grid-column:span 5}}
 .empty{border:1px dashed var(--line);border-radius:8px;padding:18px;text-align:center;color:var(--muted)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{background:transparent;border:0;padding:5px 10px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
@@ -964,19 +964,34 @@ function niceTicks(min,max,n=4){ if(!isFinite(min)||!isFinite(max)){min=0;max=1;
    CHARTS (inline SVG)
    ================================================================== */
 let balRange='all';
-const CHART_RO = typeof ResizeObserver!=='undefined' ? new ResizeObserver(entries=>{ for(const en of entries){ const h=en.target; const w=Math.round(en.contentRect.width); if(h._redraw && w>0 && Math.abs(w-(h._w||0))>4){ h._w=w; h._redraw(); } } }) : {observe(){}};
-function drawBalanceChart(agg,hostId='bal-chart',range=balRange){
-  const host=document.getElementById(hostId); if(!host) return;
-  host._redraw=()=>drawBalanceChart(getAgg(),hostId,range); host._w=host.clientWidth; CHART_RO.observe(host);
+const RANGE_SPANS={'1d':864e5,'1w':6048e5,'1m':2592e6};
+const LIVE_RANGES=[['session','This stream'],['1d','1D'],['1w','1W'],['1m','1M'],['all','All']];
+let liveRange=(()=>{ try{ const v=localStorage.getItem('batgasm-live-range'); return LIVE_RANGES.some(r=>r[0]===v)? v : 'session'; }catch(e){ return 'session'; } })();
+/** Balance points for a range. Keeps the last point before the cut so the line starts at the right level. */
+function rangePoints(agg,range){
   let pts=agg.series.map((p,i)=>({...p,i}));
   const sessRef=agg.currentSession||agg.lastSession;
   if(range==='session' && sessRef){ const sid=sessRef.id; const first=pts.findIndex(p=>p.sid===sid); if(first>0) pts=pts.slice(first-1).filter((p,k)=>k===0||p.sid===sid); }
   else if(range==='50') pts=pts.slice(-51);
+  else if(RANGE_SPANS[range]){ const cut=Date.now()-RANGE_SPANS[range]; const k=pts.findIndex(p=>p.ts && +new Date(p.ts)>=cut); pts= k<0? pts.slice(-1) : pts.slice(Math.max(0,k-1)); }
+  if(pts.length>2 && pts[0].start) pts=pts.slice(1);
+  while(pts.length>2 && pts[0].bal===0 && pts[1].adj) pts=pts.slice(1);
+  if(pts.length===1 && agg.series.length>1) pts=[pts[0],{...pts[0],ts:new Date().toISOString(),start:false,adj:true,net:0,game:'No bets in this range'}];
+  return pts;
+}
+function rangeChange(agg,range){ const pts=rangePoints(agg,range); if(pts.length<2) return null; const a=pts[0].bal, b=pts[pts.length-1].bal; return {delta:b-a,pct:a>0?(b-a)/a:0,n:pts.filter((p,k)=>k>0&&!p.adj).length}; }
+const CHART_RO = typeof ResizeObserver!=='undefined' ? new ResizeObserver(entries=>{ for(const en of entries){ const h=en.target; const w=Math.round(en.contentRect.width); if(h._redraw && w>0 && Math.abs(w-(h._w||0))>4){ h._w=w; h._redraw(); } } }) : {observe(){}};
+function drawBalanceChart(agg,hostId='bal-chart',range=balRange){
+  const host=document.getElementById(hostId); if(!host) return;
+  host._redraw=()=>drawBalanceChart(getAgg(),hostId,range); host._w=host.clientWidth; CHART_RO.observe(host);
+  const sessRef=agg.currentSession||agg.lastSession;
+  const pts=rangePoints(agg,range);
   if(pts.length<2){ host.innerHTML='<div class="empty">Your balance line appears after the first bet.</div>'; return; }
-  const W=Math.max(280,host.clientWidth), H=Math.round(clamp(W*.36,190,280)), pl=52, pr=10, pt=10, pb=22;
+  if(host.dataset.fill){ host.innerHTML=''; }
+  const W=Math.max(280,host.clientWidth), baseH=Math.round(clamp(W*.36,190,280)), H= host.dataset.fill? Math.max(baseH, Math.min(620, host.clientHeight-6)) : baseH, pl=52, pr=10, pt=10, pb=22;
   let lo=Math.min(...pts.map(p=>p.bal)), hi=Math.max(...pts.map(p=>p.bal));
   const SL=agg.settings.stopLossPct/100, TP=agg.settings.takeProfitPct/100;
-  let slv=null,tpv=null; if(sessRef && sessRef.startBalance>0 && (range!=='all'||agg.currentSession)){ slv=sessRef.startBalance*(1-SL); tpv=sessRef.startBalance*(1+TP); lo=Math.min(lo,slv); hi=Math.max(hi,tpv); }
+  let slv=null,tpv=null; if(sessRef && sessRef.startBalance>0 && (range==='session'||(range==='all'&&hostId==='bal-chart'&&agg.currentSession))){ slv=sessRef.startBalance*(1-SL); tpv=sessRef.startBalance*(1+TP); lo=Math.min(lo,slv); hi=Math.max(hi,tpv); }
   const nt=niceTicks(lo,hi,4);
   const x=k=>pl+(W-pl-pr)*(k/(pts.length-1)), y=v=>pt+(H-pt-pb)*(1-(v-nt.lo)/(nt.hi-nt.lo||1));
   const step=Math.max(1,Math.floor(pts.length/900));
@@ -1049,7 +1064,7 @@ function render(){
   $('#qa').hidden= r!=='log';
   fillGameSelect($('#qa-game'),S.games,$('#qa-game').value||S.games[0]);
   const v=$('#view');
-  if(r==='live'){ v.innerHTML=viewLive(agg); drawBalanceChart(agg,'live-chart','session'); }
+  if(r==='live'){ v.innerHTML=viewLive(agg); drawBalanceChart(agg,'live-chart',liveRange); }
   else if(r==='stats'){ v.innerHTML=viewStats(agg); afterStats(agg); }
   else if(r==='log'){ v.innerHTML=viewLog(agg); }
   else if(r==='strategies'){ v.innerHTML=viewStrategies(agg); drawStrategyCharts(); }
@@ -1109,8 +1124,10 @@ function viewLive(agg){
   <div class="hero"><span class="k">Streak · tilt</span><span class="v ${agg.curType==='W'?'pos':agg.curType==='L'?'neg':''}">${streak} <span style="font-size:.5em;color:${tilt.score>=60?'var(--loss)':tilt.score>=35?'var(--warn)':'var(--muted)'}">tilt ${tilt.score}</span></span><span class="d">best W${agg.longW} · worst L${agg.longL}</span></div>
   </div>
 
-  <section class="panel s8"><div class="panel-h"><h2>${cs?'This session':'Last session'}</h2><span class="muted small">${sref?when(sref.start):''}</span></div><div id="live-chart" class="chart"></div></section>
-  <section class="panel s4"><div class="panel-h"><h2>Latest bets</h2><a class="small" href="#log">All</a></div>
+  <section class="panel s8 live-main"><div class="panel-h"><div style="display:flex;flex-direction:column;gap:2px"><h2>Balance</h2>${(()=>{ const ch=rangeChange(agg,liveRange); return ch? `<span class="small"><b class="num ${cls(ch.delta)}">${money(ch.delta,true)} (${Math.abs(ch.pct)>=10? "×"+fmt(1+ch.pct) : pctS(ch.pct)})</b> <span class="muted">${liveRange==='session'?(cs?'this stream':'last stream'):LIVE_RANGES.find(r=>r[0]===liveRange)[1]==='All'?'all time':'past '+({'1d':'day','1w':'week','1m':'month'})[liveRange]} · ${ch.n} bets</span></span>` : '<span class="small muted">no bets yet</span>'; })()}</div>
+    <div class="seg" role="group" aria-label="Chart range">${LIVE_RANGES.map(([k,l])=>`<button type="button" data-act="live-range" data-v="${k}" aria-pressed="${liveRange===k}">${l}</button>`).join('')}</div></div>
+    <div id="live-chart" class="chart" data-fill="1" style="flex:1 1 0;min-height:200px"></div></section>
+  <section class="panel s4 live-side"><div class="panel-h"><h2>Latest bets</h2><a class="small" href="#log">All</a></div>
     ${feed.length?`<div class="feed">${feed.map(b=>`<div class="fi${FRESH.has(b.id)?' fresh':''}"><span class="roll ${b.roll==null?'n':b.net>0?'w':'l'}">${b.roll!=null?b.roll:(b.net>0?'W':'L')}</span><div><div>${esc(b.game)} <span class="muted small">${money(b.wager)}</span></div><div class="m">${when(b.ts)}</div></div><div class="r"><b class="${cls(b.net)}">${money(b.net,true)}</b><div class="m">${money(b.balanceAfter)}</div></div></div>`).join('')}</div>`:'<div class="empty">Your !gamble results show up here by themselves once auto-capture is on.</div>'}
   </section>
 
@@ -1473,6 +1490,7 @@ document.addEventListener('click',e=>{
     case 'load-demo': loadDemo(); break;
     case 'toggle-recs': showAllRecs=!showAllRecs; render(); break;
     case 'bal-range': balRange=b.dataset.v; render(); break;
+    case 'live-range': liveRange=b.dataset.v; try{ localStorage.setItem('batgasm-live-range',liveRange); }catch(e){} render(); break;
     case 'del-goal': DATA.goals=DATA.goals.filter(g=>g.id!==b.dataset.id); commit(); break;
     case 'more': logPage++; render(); break;
     case 'edit': editing=b.dataset.id; confirmDel=null; render(); break;
@@ -1556,7 +1574,7 @@ document.addEventListener('keydown',e=>{
 });
 $('#qa-game').addEventListener('change',()=>{ if(!$('#qa-custom').hidden){ const p=DATA.settings.gamePresets[$('#qa-game').value]; $('#qa-mult').value=p?p.mult:2; } });
 window.addEventListener('hashchange',()=>{ editing=null; confirmDel=null; resetArmed=false; render(); window.scrollTo(0,0); });
-let rzT=null; window.addEventListener('resize',()=>{ clearTimeout(rzT); rzT=setTimeout(()=>{ measure(); const r=route(); if(r==='stats') drawBalanceChart(getAgg(),'bal-chart',balRange); if(r==='live') drawBalanceChart(getAgg(),'live-chart','session'); if(r==='strategies') drawStrategyCharts(); },120); });
+let rzT=null; window.addEventListener('resize',()=>{ clearTimeout(rzT); rzT=setTimeout(()=>{ measure(); const r=route(); if(r==='stats') drawBalanceChart(getAgg(),'bal-chart',balRange); if(r==='live') drawBalanceChart(getAgg(),'live-chart',liveRange); if(r==='strategies') drawStrategyCharts(); },120); });
 window.addEventListener('storage',e=>{ if(e.key===LS_KEY && e.newValue){ try{ DATA=migrate(JSON.parse(e.newValue)); DATA.bets=normalizeBets(DATA.bets,DATA.settings.startingBalance); VER++; render(); }catch(err){} } });
 /* ---------- !gamble cooldown ---------- */
 function lastGambleTs(){ for(let i=DATA.bets.length-1;i>=0;i--){ const b=DATA.bets[i]; if(b.game==='Gamble' && b.wager>0) return +new Date(b.ts); } return null; }
