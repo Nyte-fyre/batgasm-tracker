@@ -118,6 +118,7 @@ main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px
 .hero .v{font-family:var(--f-display);font-size:clamp(24px,2.7vw,38px);white-space:nowrap;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .hero .d{font-size:12.5px;color:var(--muted)}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--accent-2);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.sb-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .heroes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
 @media (max-width:1180px){.heroes{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:560px){.heroes{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1136,7 +1137,7 @@ function viewLive(agg){
   <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
   <div class="s12 heroes">
   <div class="hero"><span class="k">Next !gamble</span><span class="v cd ready" data-cd>Ready</span><span class="d" data-cd-note>${cdNote()}</span></div>
-  ${(()=>{ const sb=suggestedBet(agg); return `<div class="hero"><span class="k">Suggested bet</span><span class="v" title="${fmt(sb.amount)}">${sb.amount?money(sb.amount):'—'}</span><span class="d">${sb.p}% of balance${sb.amount?` · <button type="button" class="linkbtn" data-act="copy-bet" data-v="${sb.amount}" title="Copy the command so you can paste it into chat yourself">copy !gamble ${sb.amount}</button>`:''}</span>${sb.warn?`<span class="d warnc">${esc(sb.warn)}</span>`:''}</div>`; })()}
+  ${(()=>{ const sb=suggestedBet(agg); return `<div class="hero"><span class="k">Suggested bet</span><span class="sb-row"><span class="v" title="${fmt(sb.amount)}">${sb.amount?money(sb.amount):'—'}</span>${sb.amount?`<button type="button" class="btn sm primary" data-act="copy-bet" data-v="${sb.amount}" title="Copies !gamble ${sb.amount} so you can paste it into chat yourself">Copy</button>`:''}</span><span class="d">${sb.p}% of balance${sb.amount?` · <span class="mono">!gamble ${sb.amount}</span>`:''}</span>${sb.warn?`<span class="d warnc">${esc(sb.warn)}</span>`:''}</div>`; })()}
   <div class="hero accent"><span class="k">Balance</span><span class="v" title="${fmt(agg.balance)}">${money(agg.balance)}</span><span class="d">${esc(S.currencyName)} · peak ${money(agg.peak)}</span></div>
   <div class="hero"><span class="k">${cs?'This session':'Last session'}</span><span class="v ${cls(sref?.net)}">${sref?money(sref.net,true):'—'}</span><span class="d">${sref?`${pctS(sessPct)} · ${sref.n} bets · ${dur(sref.durH)}`:'starts with your next !gamble'}</span></div>
   <div class="hero"><span class="k">Win rate ${cs?'this session':sref?'last session':''}</span><span class="v">${sref&&sref.n?pct(sref.winRate,0):'—'}</span><span class="d">all time ${pct(agg.winRate,1)} over ${fmt(agg.totalBets)} bets</span></div>
