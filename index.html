@@ -139,6 +139,7 @@ main{padding-block:18px calc(var(--qa-h) + 28px + env(safe-area-inset-bottom,0px
 .rich{display:flex;flex-direction:column}
 .rich div{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:center}
 .rich div:last-child{border-bottom:0}
+.rich .gap{padding:0;border-bottom:0;line-height:1}
 .rich .me{color:var(--accent-2);font-weight:700}
 .rich .rk{font-family:var(--f-mono);color:var(--muted);font-size:12px}
 .rich .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -502,8 +503,9 @@ function oddsBoard(rolls){
 /** Latest known balance per chatter (from "now has N"), plus each chatter's net since a timestamp. */
 function chatBoard(rolls,me,sinceIso,avgMult,balances=[]){
   const latest={}, netSince={};
-  for(const b of balances){ const u=b.user.toLowerCase(); if(!latest[u]||b.ts>=latest[u].ts) latest[u]={user:b.user,total:b.total,ts:b.ts}; }
-  for(const r of rolls){ const u=r.user.toLowerCase(); if(r.total!=null && (!latest[u]||r.ts>=latest[u].ts)) latest[u]={user:r.user,total:r.total,ts:r.ts};
+  const nice=(u,name)=> (name!==name.toLowerCase()? name : (latest[u]?.user||name));
+  for(const b of balances){ const u=b.user.toLowerCase(); if(!latest[u]||b.ts>=latest[u].ts) latest[u]={user:nice(u,b.user),total:b.total,ts:b.ts}; }
+  for(const r of rolls){ const u=r.user.toLowerCase(); if(r.total!=null && (!latest[u]||r.ts>=latest[u].ts)) latest[u]={user:nice(u,r.user),total:r.total,ts:r.ts};
     if(sinceIso && r.ts>=+new Date(sinceIso)){ const w=r.wager>0? r.wager : (r.won? r.amount/(avgMult||2) : r.amount); const nt= r.won? r.amount-w : -r.amount; netSince[u]=netSince[u]||{user:r.user,net:0,n:0}; netSince[u].net+=nt; netSince[u].n++; } }
   const rich=Object.values(latest).sort((a,b)=>b.total-a.total);
   const myRank= rich.findIndex(x=>x.user.toLowerCase()===String(me||'').toLowerCase());
@@ -893,7 +895,7 @@ window.addEventListener('message',e=>{
 });
 /* ---------- shared chat feed (Cloudflare Worker reading chat anonymously, read-only) ---------- */
 const FEED='https://batgasm-feed.nytefyre.workers.dev';
-const FEED_STATE={ok:null,lastPoll:0,error:null,busy:false,lastChatAt:null};
+const FEED_STATE={ok:null,lastPoll:0,error:null,busy:false,lastChatAt:null,gen:0,again:false};
 let switchRequested=false;
 async function fetchFeed(since){
   const all=[]; let s=since;
@@ -901,11 +903,13 @@ async function fetchFeed(since){
   return {events:all,last:s};
 }
 async function pollFeed(){
-  if(FEED_STATE.busy || !DATA.settings.chatParser.username) return;
-  FEED_STATE.busy=true;
+  if(!DATA.settings.chatParser.username) return;
+  if(FEED_STATE.busy){ FEED_STATE.again=true; return; }
+  FEED_STATE.busy=true; const gen=FEED_STATE.gen;
   try{
     const since=+DATA.meta.feedSince||0;
     const {events,last}=await fetchFeed(since);
+    if(gen!==FEED_STATE.gen){ FEED_STATE.again=true; return; } // name changed while fetching: throw this away
     const evs=events.map(e=>({id:'f-'+e.id,ts:+e.ts,author:e.author,text:e.text}));
     if(!since){ if(evs.length){ const res=runBackfill(evs); if(res) toast(`Loaded ${res.mine} bets for ${DATA.settings.chatParser.username} from ${fmt(evs.length)} chat messages`); } else { if(hasDemo()) clearDemo(true); commit(); } }
     else if(evs.length) ingestEvents(evs,{source:'live'});
@@ -913,12 +917,13 @@ async function pollFeed(){
     FEED_STATE.ok=true; FEED_STATE.error=null; FEED_STATE.lastPoll=Date.now();
     if(evs.length) FEED_STATE.lastChatAt=evs[evs.length-1].ts;
   }catch(err){ FEED_STATE.ok=false; FEED_STATE.error=String(err.message||err); }
-  finally{ FEED_STATE.busy=false; renderCapture(); }
+  finally{ FEED_STATE.busy=false; renderCapture(); if(FEED_STATE.again){ FEED_STATE.again=false; pollFeed(); } }
 }
 /** Show a different chatter: wipe derived data and rebuild from the whole feed. */
 function switchUser(name){
   name=String(name||'').trim().replace(/^@/,'');
   if(!/^\w{2,25}$/.test(name)){ toast('Twitch names are 2–25 letters, numbers or underscores'); return; }
+  FEED_STATE.gen++;
   DATA.settings.chatParser.username=name;
   DATA.bets=[]; DATA.sessions=[]; DATA.goals=DATA.goals.filter(g=>!g.demo);
   DATA.chat={rolls:[],balances:[]}; DATA.settings.startingBalance=0;
@@ -1112,7 +1117,7 @@ function viewLive(agg){
   const feed=[...DATA.bets].filter(b=>!isAdj(b)).slice(-10).reverse();
   const sessPct= sref&&sref.startBalance>0? sref.net/sref.startBalance : 0;
   const streak= agg.curType? `${agg.curType}${agg.curStreak}` : '—';
-  const meRow=board.myRank&&board.myRank>8? board.rich[board.myRank-1] : null;
+  const meRow=board.myRank&&board.myRank>10? board.rich[board.myRank-1] : null;
   const cells=od.cells.map((c,i)=>{ const t=c.w+c.l; const col= !t?'':c.w&&!c.l?'var(--win)':c.l&&!c.w?'var(--loss)':'var(--warn)'; return `<span style="${t?`background:${col};opacity:${clamp(.35+t/6,.35,1)}`:''}" data-tip="Roll ${i+1}<br>${t?`${c.w} win · ${c.l} loss`:'not seen yet'}"></span>`; }).join('');
   return `<div class="grid">${(!S.chatParser.username||switchRequested)?onboardBlock():''}
   <div class="s12" id="live-cap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${capBlock()}</div>
@@ -1140,9 +1145,9 @@ function viewLive(agg){
       ${od.theoEv!=null?`<dt data-tip="If rolls are 1–100 and wins start at ${od.minWin}, the true win chance is ${pct(od.theoP,0)}.">If rolls are fair ⓘ</dt><dd class="${cls(od.theoEv)}">${pct(od.theoP,0)} win · ${pctS(od.theoEv)}</dd>`:''}</dl>
       <div class="strip" aria-label="Rolls 1 to 100 seen in chat, green win, red loss">${cells}</div><div class="small muted">Rolls 1–100 seen in chat: green won, red lost.</div>`:'<div class="empty">Every !gamble result in chat feeds this, not just yours.</div>'}
   </section>
-  <section class="panel s4"><div class="panel-h"><h2>Chat rich list</h2><span class="muted small">${board.players} seen${board.myRank?` · you’re #${board.myRank}`:''}</span></div>
-    ${board.rich.length?`<div class="rich">${board.rich.slice(0,8).map((p,i)=>`<div class="${p.user.toLowerCase()===S.chatParser.username.toLowerCase()?'me':''}"><span class="rk">#${i+1}</span><span class="nm">${esc(p.user)}</span><span class="num">${money(p.total)}</span></div>`).join('')}${meRow?`<div class="me"><span class="rk">#${board.myRank}</span><span class="nm">${esc(meRow.user)}</span><span class="num">${money(meRow.total)}</span></div>`:''}</div>
-      <div class="small muted">Latest balance from any bot reply seen while you watched: !gamble results, !coins and !top.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
+  <section class="panel s4"><div class="panel-h"><h2>Top 10 · !top</h2><span class="muted small">${board.myRank?`${esc(S.chatParser.username)} is #${board.myRank}${board.myRank>10?' (est.)':''}`:`${board.players} seen`}</span></div>
+    ${board.rich.length?`<div class="rich">${board.rich.slice(0,10).map((p,i)=>`<div class="${p.user.toLowerCase()===S.chatParser.username.toLowerCase()?'me':''}"><span class="rk">#${i+1}</span><span class="nm">${esc(p.user)}</span><span class="num">${money(p.total)}</span></div>`).join('')}${meRow?`${board.myRank>11?'<div class="gap" aria-hidden="true"><span></span><span class="muted">⋯</span><span></span></div>':''}<div class="me"><span class="rk">#${board.myRank}</span><span class="nm">${esc(meRow.user)}</span><span class="num">${money(meRow.total)}</span></div>`:''}</div>
+      <div class="small muted">Same ranking as <span class="mono">!top</span>, updated with each newer balance seen in chat. Ranks past 10 are estimated from balances seen in chat.</div>`:'<div class="empty">Fills in as people !gamble in chat.</div>'}
   </section></div>`;
 }
 
@@ -1507,7 +1512,7 @@ document.addEventListener('click',e=>{
     case 'copy-export': { const ta=$('#exp'); const txt=ta.value; const fallback=()=>{ ta.focus(); ta.select(); toast('Press Ctrl+C to copy the selected JSON'); }; try{ navigator.clipboard.writeText(txt).then(()=>toast('Copied JSON to clipboard'),fallback); }catch(err){ fallback(); } break; }
     case 'download-export': { const blob=new Blob([JSON.stringify(DATA)],{type:'application/json'}); const a2=document.createElement('a'); a2.href=URL.createObjectURL(blob); a2.download=`batgasm-tracker-${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a2); a2.click(); setTimeout(()=>{ URL.revokeObjectURL(a2.href); a2.remove(); },500); break; }
     case 'import': doImport(); break;
-    case 'reset': if(resetArmed){ DATA=emptyData(); resetArmed=false; parsed=null; simResults={}; cmpRes=null; commit(); toast('All data erased'); } else { resetArmed=true; render(); setTimeout(()=>{ if(resetArmed){ resetArmed=false; if(route()==='setup') render(); } },6000); } break;
+    case 'reset': if(resetArmed){ FEED_STATE.gen++; DATA=emptyData(); resetArmed=false; parsed=null; simResults={}; cmpRes=null; commit(); toast('All data erased'); } else { resetArmed=true; render(); setTimeout(()=>{ if(resetArmed){ resetArmed=false; if(route()==='setup') render(); } },6000); } break;
   }
 });
 $('#sess-btn').addEventListener('click',()=>{ if(openSession()) endSession(); else { if(hasDemo()) clearDemo(true); startSession(getAgg().balance); commit(); toast('Session started'); } });
